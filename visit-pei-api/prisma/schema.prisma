@@ -1,0 +1,345 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SourceType {
+  GOV_PEI
+  PEI_511
+  TOURISM_PEI
+  OPEN_DATA
+  TRANSIT
+  OTHER
+}
+
+enum PlaceCategory {
+  VISITOR_CENTRE
+  ATTRACTION
+  BEACH
+  PARK
+  TRAIL
+  LIGHTHOUSE
+  MUSEUM
+  HISTORIC
+  FOOD_DRINK
+  TRANSPORT
+  OTHER
+}
+
+enum AlertSeverity {
+  INFO
+  MINOR
+  MAJOR
+  CRITICAL
+}
+
+enum TravelEventType {
+  ROAD_CONDITION
+  CAMERA
+  FERRY
+  EVENT
+  ADVISORY
+  PARK
+  OTHER
+}
+
+model SourceSnapshot {
+  id        String     @id @default(cuid())
+  source    SourceType
+  endpoint  String
+  payload   Json
+  fetchedAt DateTime   @default(now())
+
+  @@index([source, fetchedAt])
+}
+
+model Place {
+  id          String        @id @default(cuid())
+  name        String
+  category    PlaceCategory
+  description String?
+  address     String?
+  phone       String?
+  website     String?
+  hoursJson   Json?
+  region      String?
+  community   String?
+  tags        String[]      @default([])
+  rating      Float? // optional
+  popularity  Int? // computed score
+  isFeatured  Boolean       @default(false)
+
+  lat Float?
+  lng Float?
+  geo Unsupported("geography")?
+
+  source    SourceType
+  sourceUrl String?
+  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now())
+
+  @@index([category])
+  @@index([region])
+}
+
+model Event {
+  id          String    @id
+  title       String
+  description String?   @db.Text
+  startAt     DateTime
+  endAt       DateTime?
+  allDay      Boolean   @default(false)
+
+  venueName String?
+  address   String?
+  community String?
+
+  website  String?
+  imageUrl String?
+
+  contactEmail String?
+  contactPhone String?
+
+  categories String[] @default([])
+  tags       String[] @default([])
+
+  lat Float?
+  lng Float?
+  geo Unsupported("geography(Point,4326)")?
+
+  source    String  @default("MANUAL") // later: TOURISM_PEI_FEED, SCRAPE, etc.
+  sourceRef String? // original id/url
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startAt])
+  @@index([community])
+}
+
+model PublicAlert {
+  id          String        @id @default(cuid())
+  title       String
+  body        String?
+  severity    AlertSeverity @default(INFO)
+  alertType   String?
+  publishedAt DateTime?
+  source      SourceType
+  sourceUrl   String?
+  createdAt   DateTime      @default(now())
+
+  @@index([publishedAt])
+}
+
+model VisitorCentre {
+  id        String                                @id @default(cuid())
+  name      String
+  address   String?
+  community String?
+  phone     String?
+  email     String?
+  website   String?
+  hours     String?
+  season    String?
+  imageUrl  String?
+  lat       Float?
+  lng       Float?
+  geom      Unsupported("geometry(Point, 4326)")?
+  source    String
+  sourceRef String?
+  createdAt DateTime                              @default(now())
+  updatedAt DateTime                              @updatedAt
+
+  @@index([community])
+  @@index([source])
+}
+
+model TravelItem {
+  id          String          @id @default(cuid())
+  type        TravelEventType
+  title       String?
+  description String?
+  status      String?
+  startAt     DateTime?
+  endAt       DateTime?
+  imageUrl    String?
+
+  lat Float?
+  lng Float?
+  geo Unsupported("geography")?
+
+  source    SourceType
+  sourceUrl String?
+  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now())
+
+  @@index([type])
+}
+
+model TransitStop {
+  id        String  @id @default(cuid())
+  name      String
+  stopCode  String?
+  community String?
+  region    String?
+
+  lat Float?
+  lng Float?
+  geo Unsupported("geography")?
+
+  source    SourceType
+  sourceUrl String?
+  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now())
+
+  arrivals TransitArrival[]
+}
+
+model TransitArrival {
+  id          String      @id @default(cuid())
+  stopId      String
+  stop        TransitStop @relation(fields: [stopId], references: [id])
+  routeName   String?
+  scheduledAt DateTime
+  isRealtime  Boolean     @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([stopId, scheduledAt])
+}
+
+model GtfsFeed {
+  id        String   @id // e.g. "transitland:f-coachatlantic~pe~ca"
+  source    String
+  feedKey   String
+  fetchedAt DateTime @default(now())
+
+  agencies  GtfsAgency[]
+  routes    GtfsRoute[]
+  stops     GtfsStop[]
+  trips     GtfsTrip[]
+  stopTimes GtfsStopTime[]
+}
+
+model GtfsAgency {
+  id       String  @id // `${feedId}:${agency_id || 'default'}`
+  feedId   String
+  agencyId String?
+  name     String?
+  url      String?
+  timezone String?
+  lang     String?
+  phone    String?
+
+  feed GtfsFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId])
+}
+
+model GtfsRoute {
+  id        String  @id // `${feedId}:${route_id}`
+  feedId    String
+  routeId   String
+  agencyId  String?
+  shortName String?
+  longName  String?
+  desc      String?
+  type      Int?
+
+  feed GtfsFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId])
+  @@index([routeId])
+}
+
+model GtfsStop {
+  id            String  @id // `${feedId}:${stop_id}`
+  feedId        String
+  stopId        String
+  code          String?
+  name          String?
+  desc          String?
+  lat           Float?
+  lon           Float?
+  zoneId        String?
+  url           String?
+  locationType  Int?
+  parentStation String?
+
+  // PostGIS point for map queries
+  geom Unsupported("geometry(Point, 4326)")?
+
+  feed GtfsFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId])
+  @@index([stopId])
+}
+
+model GtfsTrip {
+  id          String  @id // `${feedId}:${trip_id}`
+  feedId      String
+  tripId      String
+  routeId     String
+  serviceId   String?
+  headsign    String?
+  directionId Int?
+  shapeId     String?
+
+  feed GtfsFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId])
+  @@index([routeId])
+  @@index([tripId])
+}
+
+model GtfsStopTime {
+  id            String  @id // `${feedId}:${trip_id}:${stop_sequence}`
+  feedId        String
+  tripId        String
+  arrivalTime   String?
+  departureTime String?
+  stopId        String
+  stopSequence  Int
+
+  feed GtfsFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId])
+  @@index([stopId])
+  @@index([tripId])
+}
+
+model GtfsCalendar {
+  id        String @id // `${feedId}:${service_id}`
+  feedId    String
+  serviceId String
+  monday    Int
+  tuesday   Int
+  wednesday Int
+  thursday  Int
+  friday    Int
+  saturday  Int
+  sunday    Int
+  startDate String
+  endDate   String
+
+  @@index([feedId])
+}
+
+model GtfsCalendarDate {
+  id            String @id // `${feedId}:${service_id}:${date}:${exception_type}`
+  feedId        String
+  serviceId     String
+  date          String
+  exceptionType Int
+
+  @@index([feedId])
+}
