@@ -15,79 +15,322 @@ import { Surface } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../styles';
+import { useFeaturedPlacesQuery } from '../../src/services/query/home/useFeaturedPlacesQuery';
+import { useUpcomingEventsQuery } from '../../src/services/query/home/useUpcomingEventsQuery';
+import type { Place, PlaceCategory, TourismEvent } from '../../src/types/api';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
+type CategoryTile = {
+  icon: IconName;
+  id: string;
+  label: string;
+};
+
+type VisualTheme = {
+  accentColor: string;
+  backgroundColor: string;
+  icon: IconName;
+  imageUrl: string;
+  label: string;
+};
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GRID_CARD_WIDTH  = (SCREEN_WIDTH - 40 - 12) / 2;   // 20px padding × 2, 12px gap
-const MOOD_CARD_WIDTH  = SCREEN_WIDTH - 40;               // card is full width minus 20px each side
-const MOOD_ITEM_WIDTH  = Math.floor(MOOD_CARD_WIDTH / 3); // each of 3 equal columns
-const MOOD_LABEL_WIDTH = MOOD_ITEM_WIDTH - 20;            // leave 10px breathing room each side
+const GRID_CARD_WIDTH = (SCREEN_WIDTH - 40 - 12) / 2;
+const MOOD_CARD_WIDTH = SCREEN_WIDTH - 40;
+const MOOD_ITEM_WIDTH = Math.floor(MOOD_CARD_WIDTH / 3);
+const MOOD_LABEL_WIDTH = MOOD_ITEM_WIDTH - 20;
 
-// ── Data ─────────────────────────────────────────────────────────────────────
-
-const categories = [
-  { id: 'beaches',  label: 'Beaches',        icon: 'wave'                  as IconName },
-  { id: 'food',     label: 'Food & Drink',    icon: 'silverware-fork-knife' as IconName },
-  { id: 'trails',   label: 'Coastal Trails',  icon: 'map-marker-path'       as IconName },
-  { id: 'events',   label: 'Events',          icon: 'calendar-star'         as IconName },
-  { id: 'stays',    label: 'Stays',           icon: 'bed-queen-outline'     as IconName },
-  { id: 'family',   label: 'Family Fun',      icon: 'ferris-wheel'          as IconName },
+const categories: CategoryTile[] = [
+  { id: 'beaches', label: 'Beaches', icon: 'wave' },
+  { id: 'food', label: 'Food & Drink', icon: 'silverware-fork-knife' },
+  { id: 'trails', label: 'Coastal Trails', icon: 'map-marker-path' },
+  { id: 'events', label: 'Events', icon: 'calendar-star' },
+  { id: 'stays', label: 'Stays', icon: 'bed-queen-outline' },
+  { id: 'family', label: 'Family Fun', icon: 'ferris-wheel' },
 ];
 
-const discoverCards = [
-  {
-    id: 'cavendish',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
-    title: 'Cavendish Coast',
-    description: 'Beaches & boardwalks',
+const PLACE_VISUALS: Record<PlaceCategory, VisualTheme> = {
+  VISITOR_CENTRE: {
+    label: 'Visitor Info',
+    icon: 'information-outline',
+    backgroundColor: '#daf4ee',
+    accentColor: '#0f8a73',
+    imageUrl:
+      'https://images.unsplash.com/photo-1517760444937-f6397edcbbcd?auto=format&fit=crop&w=1200&q=80',
   },
-  {
-    id: 'seafood',
-    image: 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=800&q=80',
-    title: 'Seafood Near You',
-    description: 'Lobster rolls & oysters',
+  ATTRACTION: {
+    label: 'Attraction',
+    icon: 'compass-outline',
+    backgroundColor: '#e8f0ff',
+    accentColor: '#3267b8',
+    imageUrl:
+      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
   },
-  {
-    id: 'lighthouses',
-    image: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=800&q=80',
-    title: 'Lighthouse Route',
-    description: 'Scenic island loop',
+  BEACH: {
+    label: 'Beach',
+    icon: 'wave',
+    backgroundColor: '#dff3ff',
+    accentColor: '#1982b8',
+    imageUrl:
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
   },
-  {
-    id: 'charlottetown',
-    image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80',
-    title: 'Charlottetown',
-    description: 'Food, culture & history',
+  PARK: {
+    label: 'Park',
+    icon: 'tree-outline',
+    backgroundColor: '#e3f5d6',
+    accentColor: '#4c8f2f',
+    imageUrl:
+      'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1200&q=80',
   },
-];
+  TRAIL: {
+    label: 'Trail',
+    icon: 'map-marker-path',
+    backgroundColor: '#e6f2ef',
+    accentColor: '#007960',
+    imageUrl:
+      'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=80',
+  },
+  LIGHTHOUSE: {
+    label: 'Lighthouse',
+    icon: 'lighthouse',
+    backgroundColor: '#fff3cf',
+    accentColor: '#d98500',
+    imageUrl:
+      'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=1200&q=80',
+  },
+  MUSEUM: {
+    label: 'Museum',
+    icon: 'bank-outline',
+    backgroundColor: '#efe8ff',
+    accentColor: '#6f47c8',
+    imageUrl:
+      'https://images.unsplash.com/photo-1518998053901-5348d3961a04?auto=format&fit=crop&w=1200&q=80',
+  },
+  HISTORIC: {
+    label: 'Historic',
+    icon: 'castle',
+    backgroundColor: '#f7e9dc',
+    accentColor: '#9d5b2a',
+    imageUrl:
+      'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1200&q=80',
+  },
+  FOOD_DRINK: {
+    label: 'Food & Drink',
+    icon: 'silverware-fork-knife',
+    backgroundColor: '#ffe7d9',
+    accentColor: '#c75d1d',
+    imageUrl:
+      'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=1200&q=80',
+  },
+  TRANSPORT: {
+    label: 'Transport',
+    icon: 'bus',
+    backgroundColor: '#e8eef8',
+    accentColor: '#486a9f',
+    imageUrl:
+      'https://images.unsplash.com/photo-1474487548417-781cb71495f3?auto=format&fit=crop&w=1200&q=80',
+  },
+  OTHER: {
+    label: 'Explore',
+    icon: 'map-search-outline',
+    backgroundColor: '#edf1f6',
+    accentColor: '#5f738c',
+    imageUrl:
+      'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80',
+  },
+};
 
-const quickPlans = [
-  {
-    id: 'today',
-    title: 'Today on PEI',
-    subtitle: 'Weather-friendly ideas for the next few hours',
-    icon: 'weather-partly-cloudy' as IconName,
-  },
-  {
-    id: 'nearby',
-    title: 'Nearby Favourites',
-    subtitle: 'Beaches, food, and viewpoints around you',
-    icon: 'compass-outline' as IconName,
-  },
-  {
-    id: 'upcoming',
-    title: 'Upcoming Events',
-    subtitle: 'Festivals, concerts, and local happenings',
-    icon: 'calendar-star' as IconName,
-  },
-];
+const getPlaceTheme = (category: PlaceCategory) =>
+  PLACE_VISUALS[category] ?? PLACE_VISUALS.OTHER;
 
-// ── Component ─────────────────────────────────────────────────────────────────
+const getPlaceSubtitle = (place: Place) => {
+  if (place.community?.trim()) return place.community.trim();
+  if (place.description?.trim()) return place.description.trim();
+  return 'Featured on PEI';
+};
+
+const formatEventMeta = (event: TourismEvent) => {
+  const date = new Date(event.startAt);
+  const dateText = new Intl.DateTimeFormat('en-CA', {
+    month: 'short',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(date);
+
+  if (event.allDay) return `${dateText} · All day`;
+
+  const timeText = new Intl.DateTimeFormat('en-CA', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+
+  return `${dateText} · ${timeText}`;
+};
+
+const getEventLocation = (event: TourismEvent) =>
+  event.venueName?.trim() || event.community?.trim() || 'Prince Edward Island';
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return 'Unable to load this section right now.';
+};
+
+const HomeSectionStateCard = ({
+  actionLabel,
+  description,
+  icon,
+  onPress,
+  title,
+}: {
+  actionLabel?: string;
+  description: string;
+  icon: IconName;
+  onPress?: () => void;
+  title: string;
+}) => (
+  <Surface style={styles.stateCard} elevation={0}>
+    <View style={styles.stateIconWrap}>
+      <MaterialCommunityIcons name={icon} size={24} color={COLOR.brandGreen} />
+    </View>
+    <View style={styles.stateCopy}>
+      <Text style={styles.stateTitle}>{title}</Text>
+      <Text style={styles.stateDescription}>{description}</Text>
+    </View>
+    {actionLabel && onPress ? (
+      <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={styles.retryButton}>
+        <Text style={styles.retryLabel}>{actionLabel}</Text>
+      </TouchableOpacity>
+    ) : null}
+  </Surface>
+);
+
+const DiscoverCard = ({ place }: { place: Place }) => {
+  const theme = getPlaceTheme(place.category);
+
+  return (
+    <Surface style={styles.gridCard} elevation={0}>
+      <View style={[styles.gridMedia, { backgroundColor: theme.backgroundColor }]}>
+        <Image
+          source={{ uri: place.imageUrl ?? theme.imageUrl }}
+          contentFit='cover'
+          transition={150}
+          style={styles.gridImage}
+        />
+        <View
+          style={[
+            styles.gridImageOverlay,
+            { backgroundColor: `${theme.accentColor}40` },
+          ]}
+        />
+        <View style={styles.gridFallbackBadge}>
+          <Text style={[styles.gridFallbackBadgeText, { color: theme.accentColor }]}>
+            {theme.label}
+          </Text>
+        </View>
+        <View style={styles.gridIconPill}>
+          <MaterialCommunityIcons name={theme.icon} size={28} color={COLOR.whiteText} />
+        </View>
+        <View
+          style={[
+            styles.gridFallbackOrb,
+            { backgroundColor: `${theme.accentColor}22` },
+          ]}
+        />
+      </View>
+      <View style={styles.gridBody}>
+        <Text style={styles.gridTitle} numberOfLines={1}>
+          {place.name}
+        </Text>
+        <Text style={styles.gridDescription} numberOfLines={2}>
+          {getPlaceSubtitle(place)}
+        </Text>
+      </View>
+    </Surface>
+  );
+};
+
+const DiscoverCardSkeleton = ({ index }: { index: number }) => (
+  <Surface key={`discover-skeleton-${index}`} style={styles.gridCard} elevation={0}>
+    <View style={styles.gridSkeletonImage} />
+    <View style={styles.gridBody}>
+      <View style={[styles.skeletonLine, styles.skeletonLineTitle]} />
+      <View style={[styles.skeletonLine, styles.skeletonLineBody]} />
+    </View>
+  </Surface>
+);
+
+const EventCard = ({ event }: { event: TourismEvent }) => {
+  const hasImage = Boolean(event.imageUrl);
+
+  return (
+    <Surface style={styles.planCard} elevation={0}>
+      <View style={styles.planAccent} />
+
+      {hasImage ? (
+        <Image
+          source={{ uri: event.imageUrl ?? undefined }}
+          contentFit='cover'
+          transition={150}
+          style={styles.eventImage}
+        />
+      ) : (
+        <View style={styles.planIconWrap}>
+          <MaterialCommunityIcons
+            name='calendar-star'
+            size={24}
+            color={COLOR.brandGreen}
+          />
+        </View>
+      )}
+
+      <View style={styles.planCopy}>
+        <Text style={styles.planTitle} numberOfLines={1}>
+          {event.title}
+        </Text>
+        <Text style={styles.planSubtitle} numberOfLines={1}>
+          {formatEventMeta(event)}
+        </Text>
+        <Text style={styles.planCaption} numberOfLines={1}>
+          {getEventLocation(event)}
+        </Text>
+      </View>
+
+      <MaterialCommunityIcons
+        name='chevron-right'
+        size={22}
+        color={COLOR.mutedText}
+      />
+    </Surface>
+  );
+};
+
+const EventCardSkeleton = ({ index }: { index: number }) => (
+  <Surface key={`event-skeleton-${index}`} style={styles.planCard} elevation={0}>
+    <View style={styles.planAccent} />
+    <View style={styles.planIconWrap}>
+      <MaterialCommunityIcons name='calendar-blank-outline' size={24} color={COLOR.lightGray} />
+    </View>
+    <View style={styles.planCopy}>
+      <View style={[styles.skeletonLine, styles.skeletonLineEventTitle]} />
+      <View style={[styles.skeletonLine, styles.skeletonLineBody]} />
+      <View style={[styles.skeletonLine, styles.skeletonLineCaption]} />
+    </View>
+  </Surface>
+);
 
 export default function HomeTab() {
-  const topRow    = categories.slice(0, 3);
+  const topRow = categories.slice(0, 3);
   const bottomRow = categories.slice(3, 6);
+
+  const featuredPlacesQuery = useFeaturedPlacesQuery();
+  const upcomingEventsQuery = useUpcomingEventsQuery();
+
+  const featuredPlaces = featuredPlacesQuery.data?.items ?? [];
+  const upcomingEvents = upcomingEventsQuery.data?.items ?? [];
 
   return (
     <>
@@ -99,7 +342,6 @@ export default function HomeTab() {
           style={styles.scroll}
           contentContainerStyle={styles.contentContainer}
         >
-          {/* ── Green header ─────────────────────────────────────── */}
           <View style={styles.header}>
             <View style={styles.headerLocationRow}>
               <MaterialCommunityIcons
@@ -113,22 +355,20 @@ export default function HomeTab() {
             <Text style={styles.headerGreeting}>Hello,</Text>
             <Text style={styles.headerTitle}>Explorer</Text>
             <Text style={styles.headerSub}>
-              Discover the beauty of Canada's Garden Province
+              Discover the beauty of Canada&apos;s Garden Province
             </Text>
           </View>
 
-          {/* ── Explore by mood ──────────────────────────────────── */}
           <View style={styles.moodWrapper}>
             <Surface style={styles.moodCard} elevation={0}>
-              {/* Top row */}
               <View style={styles.moodRow}>
-                {topRow.map((cat, i) => (
+                {topRow.map((cat, index) => (
                   <TouchableOpacity
                     key={cat.id}
                     activeOpacity={0.7}
                     style={[
                       styles.moodItem,
-                      i < topRow.length - 1 && styles.moodBorderRight,
+                      index < topRow.length - 1 && styles.moodBorderRight,
                     ]}
                   >
                     <View style={styles.moodCell}>
@@ -147,15 +387,14 @@ export default function HomeTab() {
 
               <View style={styles.moodDividerH} />
 
-              {/* Bottom row */}
               <View style={styles.moodRow}>
-                {bottomRow.map((cat, i) => (
+                {bottomRow.map((cat, index) => (
                   <TouchableOpacity
                     key={cat.id}
                     activeOpacity={0.7}
                     style={[
                       styles.moodItem,
-                      i < bottomRow.length - 1 && styles.moodBorderRight,
+                      index < bottomRow.length - 1 && styles.moodBorderRight,
                     ]}
                   >
                     <View style={styles.moodCell}>
@@ -174,73 +413,100 @@ export default function HomeTab() {
             </Surface>
           </View>
 
-          {/* ── Discover PEI ─────────────────────────────────────── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Discover PEI</Text>
-              <Text style={styles.sectionLink}>See all</Text>
+              <Text style={styles.sectionLink}>Featured</Text>
             </View>
 
-            <View style={styles.grid}>
-              {discoverCards.map((card) => (
-                <Surface key={card.id} style={styles.gridCard} elevation={0}>
-                  <Image
-                    source={{ uri: card.image }}
-                    contentFit='cover'
-                    transition={150}
-                    style={styles.gridImage}
-                  />
-                  <View style={styles.gridBody}>
-                    <Text style={styles.gridTitle} numberOfLines={1}>
-                      {card.title}
-                    </Text>
-                    <Text style={styles.gridDescription} numberOfLines={1}>
-                      {card.description}
-                    </Text>
-                  </View>
-                </Surface>
-              ))}
-            </View>
+            {featuredPlacesQuery.isPending ? (
+              <View style={styles.grid}>
+                {[0, 1, 2, 3].map((index) => (
+                  <DiscoverCardSkeleton key={index} index={index} />
+                ))}
+              </View>
+            ) : null}
+
+            {!featuredPlacesQuery.isPending && featuredPlacesQuery.isError ? (
+              <HomeSectionStateCard
+                title='Featured places unavailable'
+                description={getErrorMessage(featuredPlacesQuery.error)}
+                icon='map-search-outline'
+                actionLabel='Retry'
+                onPress={() => featuredPlacesQuery.refetch()}
+              />
+            ) : null}
+
+            {!featuredPlacesQuery.isPending &&
+            !featuredPlacesQuery.isError &&
+            featuredPlaces.length === 0 ? (
+              <HomeSectionStateCard
+                title='No featured places yet'
+                description='When the backend has featured places, they will appear here automatically.'
+                icon='compass-outline'
+              />
+            ) : null}
+
+            {!featuredPlacesQuery.isPending &&
+            !featuredPlacesQuery.isError &&
+            featuredPlaces.length > 0 ? (
+              <View style={styles.grid}>
+                {featuredPlaces.map((place) => (
+                  <DiscoverCard key={place.id} place={place} />
+                ))}
+              </View>
+            ) : null}
           </View>
 
-          {/* ── Quick Plans ──────────────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Plans</Text>
-
-            <View style={styles.planList}>
-              {quickPlans.map((plan) => (
-                <Surface key={plan.id} style={styles.planCard} elevation={0}>
-                  <View style={styles.planAccent} />
-
-                  <View style={styles.planIconWrap}>
-                    <MaterialCommunityIcons
-                      name={plan.icon}
-                      size={24}
-                      color={COLOR.brandGreen}
-                    />
-                  </View>
-
-                  <View style={styles.planCopy}>
-                    <Text style={styles.planTitle}>{plan.title}</Text>
-                    <Text style={styles.planSubtitle}>{plan.subtitle}</Text>
-                  </View>
-
-                  <MaterialCommunityIcons
-                    name='chevron-right'
-                    size={22}
-                    color={COLOR.mutedText}
-                  />
-                </Surface>
-              ))}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Upcoming Events</Text>
+              <Text style={styles.sectionLink}>Live</Text>
             </View>
+
+            {upcomingEventsQuery.isPending ? (
+              <View style={styles.planList}>
+                {[0, 1, 2].map((index) => (
+                  <EventCardSkeleton key={index} index={index} />
+                ))}
+              </View>
+            ) : null}
+
+            {!upcomingEventsQuery.isPending && upcomingEventsQuery.isError ? (
+              <HomeSectionStateCard
+                title='Events unavailable'
+                description={getErrorMessage(upcomingEventsQuery.error)}
+                icon='calendar-alert'
+                actionLabel='Retry'
+                onPress={() => upcomingEventsQuery.refetch()}
+              />
+            ) : null}
+
+            {!upcomingEventsQuery.isPending &&
+            !upcomingEventsQuery.isError &&
+            upcomingEvents.length === 0 ? (
+              <HomeSectionStateCard
+                title='No upcoming events found'
+                description='The live events feed is connected. New events will show here as soon as they are available.'
+                icon='calendar-blank-outline'
+              />
+            ) : null}
+
+            {!upcomingEventsQuery.isPending &&
+            !upcomingEventsQuery.isError &&
+            upcomingEvents.length > 0 ? (
+              <View style={styles.planList}>
+                {upcomingEvents.map((event) => (
+                  <EventCard key={event.id} event={event} />
+                ))}
+              </View>
+            ) : null}
           </View>
         </ScrollView>
       </SafeAreaView>
     </>
   );
 }
-
-// ── Shared shadow (cross-platform) ────────────────────────────────────────────
 
 const cardShadow = Platform.select({
   ios: {
@@ -254,8 +520,6 @@ const cardShadow = Platform.select({
   },
 });
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -267,8 +531,6 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: 132,
   },
-
-  // Header
   header: {
     backgroundColor: COLOR.brandGreen,
     paddingHorizontal: 24,
@@ -307,8 +569,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 6,
   },
-
-  // Mood card
   moodWrapper: {
     paddingHorizontal: 20,
     marginTop: -44,
@@ -347,8 +607,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-
-  // Section
   section: {
     paddingHorizontal: 20,
     paddingTop: 32,
@@ -369,8 +627,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-
-  // Discover grid
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -383,13 +639,57 @@ const styles = StyleSheet.create({
     backgroundColor: COLOR.surface,
     ...cardShadow,
   },
-  gridImage: {
+  gridMedia: {
     width: '100%',
     height: 120,
+    padding: 12,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+  },
+  gridImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gridImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gridFallbackBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    zIndex: 1,
+  },
+  gridFallbackBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  gridIconPill: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    zIndex: 1,
+  },
+  gridFallbackOrb: {
+    position: 'absolute',
+    right: -22,
+    bottom: -28,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+  },
+  gridSkeletonImage: {
+    width: '100%',
+    height: 120,
+    backgroundColor: COLOR.backgroundSoft,
   },
   gridBody: {
     padding: 12,
-    gap: 3,
+    gap: 4,
   },
   gridTitle: {
     color: COLOR.headingText,
@@ -402,8 +702,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-
-  // Quick Plans
   planList: {
     gap: 12,
   },
@@ -433,9 +731,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLOR.lightGreen,
   },
+  eventImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: COLOR.backgroundSoft,
+  },
   planCopy: {
     flex: 1,
-    gap: 3,
+    gap: 4,
   },
   planTitle: {
     color: COLOR.headingText,
@@ -446,5 +750,70 @@ const styles = StyleSheet.create({
     color: COLOR.mutedText,
     fontSize: 13,
     lineHeight: 18,
+  },
+  planCaption: {
+    color: COLOR.brandGreen,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stateCard: {
+    borderRadius: 20,
+    backgroundColor: COLOR.surface,
+    padding: 18,
+    gap: 14,
+    ...cardShadow,
+  },
+  stateIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLOR.lightGreen,
+  },
+  stateCopy: {
+    gap: 6,
+  },
+  stateTitle: {
+    color: COLOR.headingText,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  stateDescription: {
+    color: COLOR.mutedText,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    backgroundColor: COLOR.lightGreen,
+  },
+  retryLabel: {
+    color: COLOR.brandGreen,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  skeletonLine: {
+    borderRadius: 999,
+    backgroundColor: COLOR.backgroundSoft,
+  },
+  skeletonLineTitle: {
+    width: '78%',
+    height: 14,
+  },
+  skeletonLineBody: {
+    width: '58%',
+    height: 12,
+  },
+  skeletonLineEventTitle: {
+    width: '72%',
+    height: 14,
+  },
+  skeletonLineCaption: {
+    width: '44%',
+    height: 12,
   },
 });

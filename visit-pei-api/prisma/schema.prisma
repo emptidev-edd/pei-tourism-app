@@ -67,6 +67,7 @@ model Place {
   name        String
   category    PlaceCategory
   description String?
+  imageUrl    String?
   address     String?
   phone       String?
   website     String?

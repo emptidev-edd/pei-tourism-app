@@ -7,6 +7,7 @@ const Body = z.object({
   category: z.string().min(2), // "TRAIL" | "PARK" | ...
   nameField: z.string().min(1),
   descriptionField: z.string().optional(),
+  imageField: z.string().optional(),
   addressField: z.string().optional(),
   websiteField: z.string().optional(),
   phoneField: z.string().optional(),

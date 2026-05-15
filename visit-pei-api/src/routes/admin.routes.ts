@@ -5,7 +5,7 @@ import { searchArcgis } from '../controller/arcgisSearch.controller.js';
 import { ingestEventsScrape } from '../controller/eventsScrape.controller.js';
 import { ingestGtfs } from '../controller/gtfs.controller.js';
 import { ingestVisitorCentres } from '../controller/visitorCentres.controller.js';
-import { recomputePlaceScores } from '../controller/places.controller.js';
+import { recomputePlaceScores, setPlaceFeatured, setPlaceImage } from '../controller/places.controller.js';
 
 const router = Router();
 
@@ -21,5 +21,7 @@ router.get('/arcgis/search', searchArcgis);
 
 // Place utilities
 router.post('/places/recompute-scores', recomputePlaceScores);
+router.post('/places/:id/feature', setPlaceFeatured);
+router.post('/places/:id/image', setPlaceImage);
 
 export default router;

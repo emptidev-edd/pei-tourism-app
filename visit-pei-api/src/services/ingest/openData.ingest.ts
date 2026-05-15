@@ -116,6 +116,7 @@ export const ingestArcGisPlaces = async (args: {
   category: string; // e.g. "TRAIL"
   nameField: string; // e.g. "NAME"
   descriptionField?: string; // e.g. "DESCRIPTION"
+  imageField?: string; // e.g. "IMAGE_URL"
   addressField?: string; // e.g. "ADDRESS"
   websiteField?: string; // e.g. "URL"
   phoneField?: string; // e.g. "PHONE"
@@ -135,6 +136,7 @@ export const ingestArcGisPlaces = async (args: {
     const description = args.descriptionField
       ? clean(props[args.descriptionField])
       : undefined;
+    const imageUrl = args.imageField ? clean(props[args.imageField]) : undefined;
     const address = args.addressField
       ? clean(props[args.addressField])
       : undefined;
@@ -177,6 +179,7 @@ export const ingestArcGisPlaces = async (args: {
         name,
         category: args.category as any,
         description,
+        imageUrl,
         address,
         website,
         phone,
@@ -191,6 +194,7 @@ export const ingestArcGisPlaces = async (args: {
         name,
         category: args.category as any,
         description,
+        imageUrl,
         address,
         website,
         phone,
