@@ -71,3 +71,8 @@ export type EventsListResponse = {
   limit: number;
   items: TourismEvent[];
 };
+
+export type EventDetailResponse = {
+  ok: boolean;
+  event: TourismEvent;
+};

@@ -1,5 +1,6 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import type { ComponentProps } from 'react';
 import {
@@ -201,60 +202,91 @@ const HomeSectionStateCard = ({
       <Text style={styles.stateDescription}>{description}</Text>
     </View>
     {actionLabel && onPress ? (
-      <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={styles.retryButton}>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={onPress}
+        style={styles.retryButton}
+      >
         <Text style={styles.retryLabel}>{actionLabel}</Text>
       </TouchableOpacity>
     ) : null}
   </Surface>
 );
 
-const DiscoverCard = ({ place }: { place: Place }) => {
+const DiscoverCard = ({
+  onPress,
+  place,
+}: {
+  onPress: () => void;
+  place: Place;
+}) => {
   const theme = getPlaceTheme(place.category);
 
   return (
-    <Surface style={styles.gridCard} elevation={0}>
-      <View style={[styles.gridMedia, { backgroundColor: theme.backgroundColor }]}>
-        <Image
-          source={{ uri: place.imageUrl ?? theme.imageUrl }}
-          contentFit='cover'
-          transition={150}
-          style={styles.gridImage}
-        />
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onPress}
+      style={styles.gridCardPressable}
+    >
+      <Surface style={styles.gridCard} elevation={0}>
         <View
-          style={[
-            styles.gridImageOverlay,
-            { backgroundColor: `${theme.accentColor}40` },
-          ]}
-        />
-        <View style={styles.gridFallbackBadge}>
-          <Text style={[styles.gridFallbackBadgeText, { color: theme.accentColor }]}>
-            {theme.label}
+          style={[styles.gridMedia, { backgroundColor: theme.backgroundColor }]}
+        >
+          <Image
+            source={{ uri: place.imageUrl ?? theme.imageUrl }}
+            contentFit='cover'
+            transition={150}
+            style={styles.gridImage}
+          />
+          <View
+            style={[
+              styles.gridImageOverlay,
+              { backgroundColor: `${theme.accentColor}40` },
+            ]}
+          />
+          <View style={styles.gridFallbackBadge}>
+            <Text
+              style={[
+                styles.gridFallbackBadgeText,
+                { color: theme.accentColor },
+              ]}
+            >
+              {theme.label}
+            </Text>
+          </View>
+          <View style={styles.gridIconPill}>
+            <MaterialCommunityIcons
+              name={theme.icon}
+              size={28}
+              color={COLOR.whiteText}
+            />
+          </View>
+          <View
+            style={[
+              styles.gridFallbackOrb,
+              { backgroundColor: `${theme.accentColor}22` },
+            ]}
+          />
+        </View>
+        <View style={styles.gridBody}>
+          <Text style={styles.gridTitle} numberOfLines={1}>
+            {place.name}
+          </Text>
+          <Text style={styles.gridDescription} numberOfLines={2}>
+            {getPlaceSubtitle(place)}
           </Text>
         </View>
-        <View style={styles.gridIconPill}>
-          <MaterialCommunityIcons name={theme.icon} size={28} color={COLOR.whiteText} />
-        </View>
-        <View
-          style={[
-            styles.gridFallbackOrb,
-            { backgroundColor: `${theme.accentColor}22` },
-          ]}
-        />
-      </View>
-      <View style={styles.gridBody}>
-        <Text style={styles.gridTitle} numberOfLines={1}>
-          {place.name}
-        </Text>
-        <Text style={styles.gridDescription} numberOfLines={2}>
-          {getPlaceSubtitle(place)}
-        </Text>
-      </View>
-    </Surface>
+      </Surface>
+    </TouchableOpacity>
   );
 };
 
 const DiscoverCardSkeleton = ({ index }: { index: number }) => (
-  <Surface key={`discover-skeleton-${index}`} style={styles.gridCard} elevation={0}>
+  <Surface
+    key={`discover-skeleton-${index}`}
+    style={styles.gridCard}
+    elevation={0}
+  >
     <View style={styles.gridSkeletonImage} />
     <View style={styles.gridBody}>
       <View style={[styles.skeletonLine, styles.skeletonLineTitle]} />
@@ -309,10 +341,18 @@ const EventCard = ({ event }: { event: TourismEvent }) => {
 };
 
 const EventCardSkeleton = ({ index }: { index: number }) => (
-  <Surface key={`event-skeleton-${index}`} style={styles.planCard} elevation={0}>
+  <Surface
+    key={`event-skeleton-${index}`}
+    style={styles.planCard}
+    elevation={0}
+  >
     <View style={styles.planAccent} />
     <View style={styles.planIconWrap}>
-      <MaterialCommunityIcons name='calendar-blank-outline' size={24} color={COLOR.lightGray} />
+      <MaterialCommunityIcons
+        name='calendar-blank-outline'
+        size={24}
+        color={COLOR.lightGray}
+      />
     </View>
     <View style={styles.planCopy}>
       <View style={[styles.skeletonLine, styles.skeletonLineEventTitle]} />
@@ -452,7 +492,16 @@ export default function HomeTab() {
             featuredPlaces.length > 0 ? (
               <View style={styles.grid}>
                 {featuredPlaces.map((place) => (
-                  <DiscoverCard key={place.id} place={place} />
+                  <DiscoverCard
+                    key={place.id}
+                    place={place}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/places/[id]',
+                        params: { id: place.id },
+                      })
+                    }
+                  />
                 ))}
               </View>
             ) : null}
@@ -632,8 +681,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
   },
-  gridCard: {
+  gridCardPressable: {
     width: GRID_CARD_WIDTH,
+  },
+  gridCard: {
+    width: '100%',
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: COLOR.surface,

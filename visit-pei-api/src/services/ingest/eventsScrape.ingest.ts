@@ -4,6 +4,27 @@ import { getText } from '../httpText.js';
 import { prisma } from '../../config/prisma.js';
 
 const BASE_LIST_URL = 'https://www.tourismpei.com/what-to-do/events';
+const TOURISM_PEI_ORIGIN = 'https://www.tourismpei.com';
+const GENERIC_EVENT_IMAGES = new Set([
+  `${TOURISM_PEI_ORIGIN}/sites/default/files/media/images/seo-default-image.jpg`,
+  `${TOURISM_PEI_ORIGIN}/sites/default/files/styles/card/public/media/images/%C2%A9TPEI015_HO_Hampsire_23.jpg?h=df1a205b&itok=4nSOLqD-`,
+]);
+
+const toAbsoluteTourismPeiUrl = (value?: string | null) => {
+  if (!value?.trim()) return null;
+
+  try {
+    return new URL(value.trim(), TOURISM_PEI_ORIGIN).toString();
+  } catch {
+    return null;
+  }
+};
+
+const isGenericTourismPeiImage = (value?: string | null) => {
+  const normalized = toAbsoluteTourismPeiUrl(value);
+  if (!normalized) return false;
+  return GENERIC_EVENT_IMAGES.has(normalized);
+};
 
 const normalizePhone = (raw: string) => {
   const cleaned = raw.replace(/[^\d+]/g, '');
@@ -155,7 +176,11 @@ const withinRange = (d: Date, start?: Date, end?: Date) => {
   return true;
 };
 
-type ListItem = { url: string; listCommunity: string | null };
+type ListItem = {
+  url: string;
+  listCommunity: string | null;
+  listImageUrl: string | null;
+};
 
 const getEventLinksFromListPage = async (page: number): Promise<ListItem[]> => {
   const url = `${BASE_LIST_URL}?page=${page}`;
@@ -164,24 +189,39 @@ const getEventLinksFromListPage = async (page: number): Promise<ListItem[]> => {
 
   const items: ListItem[] = [];
   const seen = new Set<string>();
-
-  // Each card has a "Full Details" link; easiest is to capture those
-  $('a:contains("Full Details")').each((_, el) => {
+  const pushItem = (el: any) => {
     const href = $(el).attr('href');
     if (!href || !href.startsWith('/what-to-do/events/')) return;
+    if (href === '/what-to-do/events/') return;
 
-    const abs = new URL(href, 'https://www.tourismpei.com').toString();
+    const abs = new URL(href, TOURISM_PEI_ORIGIN).toString();
     if (seen.has(abs)) return;
     seen.add(abs);
 
-    const card = $(el).closest('article, .views-row, .card, .result');
-    const cardText = card.text().replace(/\s+/g, ' ').trim();
+    const cardRoot =
+      $(el).closest('.wrapper, article, .views-row, .card, .result');
+    const cardText = cardRoot.text().replace(/\s+/g, ' ').trim();
+    const linkedImage =
+      cardRoot.find('.image figure img').first().attr('src') ||
+      cardRoot.find('figure img').first().attr('src') ||
+      cardRoot.find('img').first().attr('src');
+    const listImageUrl = toAbsoluteTourismPeiUrl(linkedImage);
 
     // Extract "Summerside | Summerside Area" => Summerside
     const m = cardText.match(/([A-Za-z \-']+)\s*\|\s*([A-Za-z \-']+ Area)/);
     const listCommunity = m?.[1]?.trim() ?? null;
 
-    items.push({ url: abs, listCommunity });
+    items.push({ url: abs, listCommunity, listImageUrl });
+  };
+
+  // Current site structure: event cards link directly from the image/title card.
+  $('main .wrapper .image a[href^="/what-to-do/events/"]').each((_, el) => {
+    pushItem(el);
+  });
+
+  // Older site structure: cards had a "Full Details" link.
+  $('a:contains("Full Details")').each((_, el) => {
+    pushItem(el);
   });
 
   return items;
@@ -190,6 +230,7 @@ const getEventLinksFromListPage = async (page: number): Promise<ListItem[]> => {
 const scrapeEventDetail = async (
   url: string,
   listCommunity?: string | null,
+  listImageUrl?: string | null,
 ) => {
   const html = await getText(url);
   const $ = cheerio.load(html);
@@ -233,18 +274,29 @@ const scrapeEventDetail = async (
 
   // Better image: try content image first, fall back to og:image
   let imageUrl: string | null = null;
-  
-  // Try figure > img (actual event image)
-  const contentImg = $('figure img').first().attr('src')?.trim();
-  if (contentImg) {
-    imageUrl = new URL(contentImg, 'https://www.tourismpei.com').toString();
+
+  // The listing page usually has the event-specific card image, so prefer it.
+  if (listImageUrl && !isGenericTourismPeiImage(listImageUrl)) {
+    imageUrl = listImageUrl;
   }
-  
-  // Fallback: og:image (often generic seo-default-image.jpg)
+
+  // Try detail page figure image only if it is not one of the known generic site assets.
   if (!imageUrl) {
-    const ogImage = $('meta[property="og:image"]').attr('content')?.trim();
-    if (ogImage) {
-      imageUrl = new URL(ogImage, 'https://www.tourismpei.com').toString();
+    const contentImg = toAbsoluteTourismPeiUrl(
+      $('figure img').first().attr('src')?.trim(),
+    );
+    if (contentImg && !isGenericTourismPeiImage(contentImg)) {
+      imageUrl = contentImg;
+    }
+  }
+
+  // Fallback: og:image when it points to a real event image.
+  if (!imageUrl) {
+    const ogImage = toAbsoluteTourismPeiUrl(
+      $('meta[property="og:image"]').attr('content')?.trim(),
+    );
+    if (ogImage && !isGenericTourismPeiImage(ogImage)) {
+      imageUrl = ogImage;
     }
   }
 
@@ -419,9 +471,9 @@ export const scrapeTourismPeiEvents = async (args: {
   const errors: { url: string; message: string }[] = [];
 
   for (const item of allItems) {
-    const { url, listCommunity } = item;
+    const { url, listCommunity, listImageUrl } = item;
     try {
-      const ev = await scrapeEventDetail(url, listCommunity);
+      const ev = await scrapeEventDetail(url, listCommunity, listImageUrl);
 
       if (start && !withinRange(ev.startAt, start, undefined)) continue;
       if (end && !withinRange(ev.startAt, undefined, end)) continue;

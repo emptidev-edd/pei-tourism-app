@@ -5,21 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ac6755eb-8e0c-4982-b080-84fba5371da6" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/prisma/schema.prisma" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/prisma/schema.prisma" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/src/config/config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/src/config/config.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/src/controller/places.controller.ts" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/src/controller/places.controller.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/src/routes/admin.routes.ts" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/src/routes/admin.routes.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/src/routes/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/src/routes/index.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-api/src/routes/places.routes.ts" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-api/src/routes/places.routes.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/app.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/app/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/app/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/app/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/app/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/visit-pei-ui/tsconfig.json" beforeDir="false" afterPath="$PROJECT_DIR$/visit-pei-ui/tsconfig.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -40,7 +27,7 @@
     </option>
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/visit-pei-api" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="ROOT_SYNC" value="SYNC" />
   </component>
   <component name="ProjectColorInfo">{
@@ -64,8 +51,10 @@
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore_missing_gitignore&quot;: &quot;true&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
     &quot;last_opened_file_path&quot;: &quot;/Users/edwin/My-Projects/pei-tourism-app&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
@@ -109,6 +98,9 @@
       <updated>1774310504902</updated>
       <workItem from="1774310507045" duration="8004000" />
       <workItem from="1776561061546" duration="38000" />
+      <workItem from="1779146065917" duration="64000" />
+      <workItem from="1779394234683" duration="664000" />
+      <workItem from="1779737275083" duration="356000" />
     </task>
     <servers />
   </component>

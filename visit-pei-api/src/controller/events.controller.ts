@@ -30,8 +30,21 @@ export const listEvents = async (req: Request, res: Response) => {
     const fromDt = from ? new Date(from) : new Date('1970-01-01');
     const toDt = to ? new Date(to) : new Date('2999-12-31');
     where.AND = [
-      { startAt: { lte: toDt } },
-      { OR: [{ endAt: null }, { endAt: { gte: fromDt } }] },
+      {
+        OR: [
+          {
+            endAt: null,
+            startAt: {
+              gte: fromDt,
+              lte: toDt,
+            },
+          },
+          {
+            startAt: { lte: toDt },
+            endAt: { gte: fromDt },
+          },
+        ],
+      },
     ];
   }
 
