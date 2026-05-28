@@ -352,7 +352,6 @@ export default function EventsTab() {
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Live Results</Text>
               <Text style={styles.sectionLink}>{items.length} found</Text>
             </View>
 
@@ -405,10 +404,6 @@ export default function EventsTab() {
                     <View style={styles.dayHeader}>
                       <Text style={styles.dayTitle}>
                         {formatEventHeaderDate(section.date)}
-                      </Text>
-                      <Text style={styles.dayCount}>
-                        {section.items.length} event
-                        {section.items.length === 1 ? '' : 's'}
                       </Text>
                     </View>
 
@@ -524,12 +519,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    color: COLOR.headingText,
-    fontSize: 18,
-    fontWeight: '800',
+    justifyContent: 'flex-end',
   },
   sectionLink: {
     color: COLOR.brandGreen,
@@ -580,17 +570,11 @@ const styles = StyleSheet.create({
   dayHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
   dayTitle: {
     color: COLOR.headingText,
     fontSize: 17,
     fontWeight: '800',
-  },
-  dayCount: {
-    color: COLOR.mutedText,
-    fontSize: 13,
-    fontWeight: '700',
   },
   dayCardList: {
     gap: 14,

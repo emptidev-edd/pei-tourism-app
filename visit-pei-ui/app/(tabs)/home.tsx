@@ -295,48 +295,56 @@ const DiscoverCardSkeleton = ({ index }: { index: number }) => (
   </Surface>
 );
 
-const EventCard = ({ event }: { event: TourismEvent }) => {
+const EventCard = ({
+  event,
+  onPress,
+}: {
+  event: TourismEvent;
+  onPress: () => void;
+}) => {
   const hasImage = Boolean(event.imageUrl);
 
   return (
-    <Surface style={styles.planCard} elevation={0}>
-      <View style={styles.planAccent} />
+    <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
+      <Surface style={styles.planCard} elevation={0}>
+        <View style={styles.planAccent} />
 
-      {hasImage ? (
-        <Image
-          source={{ uri: event.imageUrl ?? undefined }}
-          contentFit='cover'
-          transition={150}
-          style={styles.eventImage}
-        />
-      ) : (
-        <View style={styles.planIconWrap}>
-          <MaterialCommunityIcons
-            name='calendar-star'
-            size={24}
-            color={COLOR.brandGreen}
+        {hasImage ? (
+          <Image
+            source={{ uri: event.imageUrl ?? undefined }}
+            contentFit='cover'
+            transition={150}
+            style={styles.eventImage}
           />
+        ) : (
+          <View style={styles.planIconWrap}>
+            <MaterialCommunityIcons
+              name='calendar-star'
+              size={24}
+              color={COLOR.brandGreen}
+            />
+          </View>
+        )}
+
+        <View style={styles.planCopy}>
+          <Text style={styles.planTitle} numberOfLines={1}>
+            {event.title}
+          </Text>
+          <Text style={styles.planSubtitle} numberOfLines={1}>
+            {formatEventMeta(event)}
+          </Text>
+          <Text style={styles.planCaption} numberOfLines={1}>
+            {getEventLocation(event)}
+          </Text>
         </View>
-      )}
 
-      <View style={styles.planCopy}>
-        <Text style={styles.planTitle} numberOfLines={1}>
-          {event.title}
-        </Text>
-        <Text style={styles.planSubtitle} numberOfLines={1}>
-          {formatEventMeta(event)}
-        </Text>
-        <Text style={styles.planCaption} numberOfLines={1}>
-          {getEventLocation(event)}
-        </Text>
-      </View>
-
-      <MaterialCommunityIcons
-        name='chevron-right'
-        size={22}
-        color={COLOR.mutedText}
-      />
-    </Surface>
+        <MaterialCommunityIcons
+          name='chevron-right'
+          size={22}
+          color={COLOR.mutedText}
+        />
+      </Surface>
+    </TouchableOpacity>
   );
 };
 
@@ -546,7 +554,16 @@ export default function HomeTab() {
             upcomingEvents.length > 0 ? (
               <View style={styles.planList}>
                 {upcomingEvents.map((event) => (
-                  <EventCard key={event.id} event={event} />
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/events/[id]',
+                        params: { id: event.id },
+                      })
+                    }
+                  />
                 ))}
               </View>
             ) : null}

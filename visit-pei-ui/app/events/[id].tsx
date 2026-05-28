@@ -12,7 +12,10 @@ import {
   View,
 } from 'react-native';
 import { ActivityIndicator, Surface } from 'react-native-paper';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
 import { COLOR } from '../../styles';
 import { useEventQuery } from '../../src/services/query/events/useEventQuery';
@@ -47,6 +50,9 @@ const getLocationLabel = (event: TourismEvent) =>
   event.community?.trim() ||
   event.address?.trim() ||
   'Prince Edward Island';
+
+const getVenueLabel = (event: TourismEvent) =>
+  event.venueName?.trim() || event.community?.trim() || 'Prince Edward Island';
 
 const getEventSummary = (event: TourismEvent) => {
   if (event.description?.trim()) {
@@ -121,6 +127,26 @@ const DetailAction = ({
   </TouchableOpacity>
 );
 
+const DetailInfoRow = ({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  value: string;
+}) => (
+  <View style={styles.infoCardRow}>
+    <View style={styles.infoIconWrap}>
+      <MaterialCommunityIcons name={icon} size={16} color={COLOR.brandGreen} />
+    </View>
+    <View style={styles.infoCopy}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  </View>
+);
+
 export default function EventDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -128,6 +154,9 @@ export default function EventDetailsScreen() {
   const eventQuery = useEventQuery(id ?? '');
 
   const event = eventQuery.data?.event;
+  const eventDateText = event ? formatEventDate(event) : null;
+  const venueLabel = event ? getVenueLabel(event) : null;
+  const locationLabel = event ? getLocationLabel(event) : null;
 
   return (
     <>
@@ -178,7 +207,8 @@ export default function EventDetailsScreen() {
             />
             <Text style={styles.stateTitle}>Event not found</Text>
             <Text style={styles.stateDescription}>
-              This event could not be loaded. Please go back and try another one.
+              This event could not be loaded. Please go back and try another
+              one.
             </Text>
           </View>
         ) : null}
@@ -230,7 +260,7 @@ export default function EventDetailsScreen() {
                   size={16}
                   color={COLOR.whiteText}
                 />
-                <Text style={styles.datePillText}>{formatEventDate(event)}</Text>
+                <Text style={styles.datePillText}>{eventDateText}</Text>
               </View>
 
               <Text style={styles.title}>{event.title}</Text>
@@ -241,33 +271,43 @@ export default function EventDetailsScreen() {
                   size={18}
                   color={COLOR.mutedText}
                 />
-                <Text style={styles.locationText}>{getLocationLabel(event)}</Text>
+                <Text style={styles.locationText}>{locationLabel}</Text>
               </View>
 
               <Text style={styles.description}>{getEventSummary(event)}</Text>
 
-              <View style={styles.infoList}>
-                {event.address?.trim() ? (
-                  <View style={styles.infoRow}>
-                    <MaterialCommunityIcons
-                      name='map-marker-radius-outline'
-                      size={16}
-                      color={COLOR.brandGreen}
-                    />
-                    <Text style={styles.infoText}>{event.address.trim()}</Text>
-                  </View>
-                ) : null}
+              <View style={styles.infoSection}>
+                <Text style={styles.sectionTitle}>Details</Text>
 
-                {event.contactPhone?.trim() ? (
-                  <View style={styles.infoRow}>
-                    <MaterialCommunityIcons
-                      name='phone-outline'
-                      size={16}
-                      color={COLOR.brandGreen}
+                <View style={styles.infoList}>
+                  <DetailInfoRow
+                    icon='calendar-month-outline'
+                    label='Date'
+                    value={eventDateText ?? ''}
+                  />
+
+                  <DetailInfoRow
+                    icon='map-marker-outline'
+                    label='Location'
+                    value={venueLabel ?? ''}
+                  />
+
+                  {event.address?.trim() ? (
+                    <DetailInfoRow
+                      icon='map-marker-radius-outline'
+                      label='Address'
+                      value={event.address.trim()}
                     />
-                    <Text style={styles.infoText}>{event.contactPhone.trim()}</Text>
-                  </View>
-                ) : null}
+                  ) : null}
+
+                  {event.contactPhone?.trim() ? (
+                    <DetailInfoRow
+                      icon='phone-outline'
+                      label='Phone'
+                      value={event.contactPhone.trim()}
+                    />
+                  ) : null}
+                </View>
               </View>
 
               {event.contactPhone || event.website ? (
@@ -400,16 +440,42 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
   },
+  infoSection: {
+    gap: 12,
+  },
+  sectionTitle: {
+    color: COLOR.headingText,
+    fontSize: 18,
+    fontWeight: '800',
+  },
   infoList: {
     gap: 12,
   },
-  infoRow: {
+  infoCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  infoText: {
+  infoIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef7f4',
+  },
+  infoCopy: {
     flex: 1,
+    gap: 2,
+  },
+  infoLabel: {
+    color: COLOR.mutedText,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  infoValue: {
     color: COLOR.mainText,
     fontSize: 14,
     lineHeight: 20,

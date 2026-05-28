@@ -211,6 +211,28 @@ export async function getNextArrivalsForStop(req: Request, res: Response) {
     });
     const routeMap = new Map(routes.map((r) => [r.routeId, r]));
 
+    const servedRoutes = Array.from(
+        new Map(
+            trips.map((trip) => {
+                const route = routeMap.get(trip.routeId);
+                return [
+                    trip.routeId,
+                    {
+                        routeId: trip.routeId,
+                        routeShortName: route?.shortName ?? null,
+                        routeLongName: route?.longName ?? null,
+                        headsign: trip.headsign ?? null,
+                        tripId: trip.tripId,
+                    },
+                ];
+            }),
+        ).values(),
+    ).sort((a, b) => {
+        const aa = a.routeShortName ?? a.routeLongName ?? a.routeId;
+        const bb = b.routeShortName ?? b.routeLongName ?? b.routeId;
+        return aa.localeCompare(bb);
+    });
+
     // 6) compute next departures
     const items = stopTimes
         .map((st) => {
@@ -267,6 +289,7 @@ export async function getNextArrivalsForStop(req: Request, res: Response) {
         at: base.toISOString(),
         count: items.length,
         items,
+        servedRoutes,
     });
 }
 
@@ -276,18 +299,25 @@ export async function getRouteStops(req: Request, res: Response) {
         : req.params.routeId;
     const feedId =
         req.query.feedId?.toString() || "transitland:f-coachatlantic~pe~ca";
+    const tripId = req.query.tripId?.toString();
 
-    // Pick one trip for this route to represent the stop pattern.
-    // Later we can support direction_id or headsign.
-    const trip = await prisma.gtfsTrip.findFirst({
-        where: {
-            feedId,
-            routeId,
-        },
-        orderBy: {
-            tripId: "asc",
-        },
-    });
+    const trip = tripId
+        ? await prisma.gtfsTrip.findFirst({
+            where: {
+                feedId,
+                tripId,
+                routeId,
+            },
+        })
+        : await prisma.gtfsTrip.findFirst({
+            where: {
+                feedId,
+                routeId,
+            },
+            orderBy: {
+                tripId: "asc",
+            },
+        });
 
     if (!trip) {
         return res.status(404).json({

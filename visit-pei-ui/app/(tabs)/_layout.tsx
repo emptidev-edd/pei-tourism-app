@@ -117,7 +117,7 @@ const TabsLayout = () => {
           title: 'Transit',
           tabBarIcon: ({ color, focused, size }) => (
             <MaterialCommunityIcons
-              name={focused ? 'map-marker' : 'map-marker-outline'}
+              name={focused ? 'bus' : 'bus-stop'}
               color={color}
               size={size}
             />
