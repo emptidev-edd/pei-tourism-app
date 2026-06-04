@@ -281,6 +281,7 @@ export async function getNextArrivalsForStop(req: Request, res: Response) {
                 id: stop.id,
                 feedId: stop.feedId,
                 stopId: stop.stopId,
+                code: stop.code,
                 name: stop.name,
                 lat: stop.lat,
                 lon: stop.lon,
@@ -300,6 +301,9 @@ export async function getRouteStops(req: Request, res: Response) {
     const feedId =
         req.query.feedId?.toString() || "transitland:f-coachatlantic~pe~ca";
     const tripId = req.query.tripId?.toString();
+    const directionId = req.query.directionId !== undefined
+        ? Number(req.query.directionId)
+        : undefined;
 
     const trip = tripId
         ? await prisma.gtfsTrip.findFirst({
@@ -313,6 +317,7 @@ export async function getRouteStops(req: Request, res: Response) {
             where: {
                 feedId,
                 routeId,
+                ...(directionId !== undefined ? { directionId } : {}),
             },
             orderBy: {
                 tripId: "asc",
@@ -357,6 +362,9 @@ export async function getRouteStops(req: Request, res: Response) {
     const items = stopTimes.map((st) => {
         const stop = stopMap.get(st.stopId);
         return {
+            routeId,
+            routeShortName: route?.shortName ?? null,
+            routeLongName: route?.longName ?? null,
             stopId: st.stopId,
             stopSequence: st.stopSequence,
             arrivalTime: st.arrivalTime,
@@ -373,6 +381,18 @@ export async function getRouteStops(req: Request, res: Response) {
         };
     });
 
+    const allDirectionTrips = await prisma.gtfsTrip.findMany({
+        where: { feedId, routeId },
+        select: { tripId: true, headsign: true, directionId: true },
+        distinct: ['directionId'],
+        orderBy: { directionId: 'asc' },
+    });
+    const availableDirections = allDirectionTrips.map(t => ({
+        directionId: t.directionId ?? 0,
+        headsign: t.headsign ?? null,
+        tripId: t.tripId,
+    }));
+
     res.json({
         ok: true,
         route: route
@@ -388,6 +408,222 @@ export async function getRouteStops(req: Request, res: Response) {
             headsign: trip.headsign,
             directionId: trip.directionId,
         },
+        availableDirections,
+        count: items.length,
+        items,
+    });
+}
+
+export async function getRoutesByFeed(req: Request, res: Response) {
+    const feedId = req.query.feedId?.toString() || "transitland:f-coachatlantic~pe~ca";
+
+    const [routes, trips, calendars] = await Promise.all([
+        prisma.gtfsRoute.findMany({ where: { feedId } }),
+        prisma.gtfsTrip.findMany({
+            where: { feedId },
+            select: { routeId: true, serviceId: true, tripId: true, headsign: true, directionId: true },
+        }),
+        prisma.gtfsCalendar.findMany({ where: { feedId } }),
+    ]);
+
+    const calendarMap = new Map(calendars.map(c => [c.serviceId, c]));
+
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
+
+    const items = routes
+        .map(route => {
+            const routeTrips = trips.filter(t => t.routeId === route.routeId);
+
+            const serviceDaysSet = new Set<string>();
+            for (const trip of routeTrips) {
+                if (!trip.serviceId) continue;
+                const cal = calendarMap.get(trip.serviceId);
+                if (!cal) continue;
+                for (const day of days) {
+                    if ((cal as any)[day] === 1) serviceDaysSet.add(day);
+                }
+            }
+            const serviceDays = days.filter(d => serviceDaysSet.has(d));
+
+            const directionMap = new Map<number, { directionId: number; headsign: string | null; tripId: string }>();
+            for (const trip of routeTrips) {
+                const dirId = trip.directionId ?? 0;
+                if (!directionMap.has(dirId)) {
+                    directionMap.set(dirId, {
+                        directionId: dirId,
+                        headsign: trip.headsign ?? null,
+                        tripId: trip.tripId,
+                    });
+                }
+            }
+            const directions = Array.from(directionMap.values()).sort((a, b) => a.directionId - b.directionId);
+
+            return {
+                routeId: route.routeId,
+                feedId: route.feedId,
+                shortName: route.shortName ?? null,
+                longName: route.longName ?? null,
+                serviceDays,
+                directions,
+            };
+        })
+        .sort((a, b) => {
+            const aa = a.shortName ?? a.longName ?? a.routeId;
+            const bb = b.shortName ?? b.longName ?? b.routeId;
+            if (a.shortName === null && b.shortName !== null) return 1;
+            if (a.shortName !== null && b.shortName === null) return -1;
+            return aa.localeCompare(bb);
+        });
+
+    res.json({
+        ok: true,
+        feedId,
+        count: items.length,
+        items,
+    });
+}
+
+export async function getFullScheduleForStop(req: Request, res: Response) {
+    const stopId = Array.isArray(req.params.stopId)
+        ? req.params.stopId[0]
+        : req.params.stopId;
+    const feedId = req.query.feedId?.toString() || "transitland:f-coachatlantic~pe~ca";
+    const date = req.query.date?.toString();
+    const limit = Math.min(Number(req.query.limit ?? 60), 200);
+
+    const { base, ymd, weekday } = getServiceDayParts(date);
+
+    const calendars = await prisma.gtfsCalendar.findMany({
+        where: {
+            feedId,
+            startDate: { lte: ymd },
+            endDate: { gte: ymd },
+        },
+    });
+
+    const activeServiceIds = new Set<string>();
+    for (const c of calendars) {
+        const dayValue = c[weekday];
+        if (dayValue === 1) activeServiceIds.add(c.serviceId);
+    }
+
+    const exceptions = await prisma.gtfsCalendarDate.findMany({
+        where: {
+            feedId,
+            date: ymd,
+        },
+    });
+
+    for (const ex of exceptions) {
+        if (ex.exceptionType === 1) activeServiceIds.add(ex.serviceId);
+        if (ex.exceptionType === 2) activeServiceIds.delete(ex.serviceId);
+    }
+
+    if (activeServiceIds.size === 0) {
+        return res.json({
+            ok: true,
+            stopId,
+            feedId,
+            date: base.toISOString(),
+            count: 0,
+            items: [],
+        });
+    }
+
+    const stopTimes = await prisma.gtfsStopTime.findMany({
+        where: {
+            feedId,
+            stopId,
+        },
+        orderBy: {
+            departureTime: "asc",
+        },
+    });
+
+    if (!stopTimes.length) {
+        return res.json({
+            ok: true,
+            stopId,
+            feedId,
+            date: base.toISOString(),
+            count: 0,
+            items: [],
+        });
+    }
+
+    const tripIds = Array.from(new Set(stopTimes.map((s) => s.tripId)));
+    const trips = await prisma.gtfsTrip.findMany({
+        where: {
+            feedId,
+            tripId: { in: tripIds },
+            serviceId: { in: Array.from(activeServiceIds) },
+        },
+    });
+
+    const tripMap = new Map(trips.map((t) => [t.tripId, t]));
+
+    const routeIds = Array.from(new Set(trips.map((t) => t.routeId)));
+    const routes = await prisma.gtfsRoute.findMany({
+        where: {
+            feedId,
+            routeId: { in: routeIds },
+        },
+    });
+    const routeMap = new Map(routes.map((r) => [r.routeId, r]));
+
+    const items = stopTimes
+        .map((st) => {
+            const trip = tripMap.get(st.tripId);
+            if (!trip) return null;
+
+            const depSecs = timeToSeconds(st.departureTime);
+            if (depSecs == null) return null;
+
+            const route = routeMap.get(trip.routeId);
+
+            return {
+                feedId,
+                stopId,
+                tripId: st.tripId,
+                routeId: trip.routeId,
+                routeShortName: route?.shortName ?? null,
+                routeLongName: route?.longName ?? null,
+                headsign: trip.headsign ?? null,
+                departureTime: st.departureTime,
+                arrivalTime: st.arrivalTime,
+                departureAtIso: secondsToIso(base, depSecs),
+                stopSequence: st.stopSequence,
+            };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => {
+            const aa = timeToSeconds(a.departureTime) ?? 0;
+            const bb = timeToSeconds(b.departureTime) ?? 0;
+            return aa - bb;
+        })
+        .slice(0, limit);
+
+    const stop = await prisma.gtfsStop.findFirst({
+        where: {
+            feedId,
+            stopId,
+        },
+    });
+
+    res.json({
+        ok: true,
+        stop: stop
+            ? {
+                id: stop.id,
+                feedId: stop.feedId,
+                stopId: stop.stopId,
+                code: stop.code,
+                name: stop.name,
+                lat: stop.lat,
+                lon: stop.lon,
+            }
+            : null,
+        date: base.toISOString(),
         count: items.length,
         items,
     });

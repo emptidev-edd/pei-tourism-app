@@ -29,8 +29,11 @@ export const queryKeys = {
       limit?: number;
       stopId: string;
     }) => ['transit', 'stopArrivals', params] as const,
-    routeStops: (params: { feedId?: string; routeId: string; tripId?: string }) =>
+    routeStops: (params: { feedId?: string; routeId: string; tripId?: string; directionId?: number }) =>
       ['transit', 'routeStops', params] as const,
+    routes: (params: { feedId?: string }) => ['transit', 'routes', params] as const,
+    stopSchedule: (params: { feedId?: string; stopId: string; date?: string }) =>
+      ['transit', 'stopSchedule', params] as const,
   },
   places: {
     detail: (id: string) => ['places', 'detail', id] as const,

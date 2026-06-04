@@ -1,8 +1,10 @@
 import { apiRequest } from '../http/apiClient';
 import type {
   NearbyTransitStopsResponse,
+  TransitRoutesResponse,
   TransitRouteStopsResponse,
   TransitStopArrivalsResponse,
+  TransitStopScheduleResponse,
 } from '../../types/api';
 
 export type GetNearbyTransitStopsOptions = {
@@ -23,6 +25,17 @@ export type GetTransitRouteStopsOptions = {
   feedId?: string;
   routeId: string;
   tripId?: string;
+  directionId?: number;
+};
+
+export type GetTransitRoutesOptions = {
+  feedId?: string;
+};
+
+export type GetTransitStopScheduleOptions = {
+  feedId?: string;
+  stopId: string;
+  date?: string;
 };
 
 export const getNearbyTransitStops = async ({
@@ -57,10 +70,18 @@ export const getTransitRouteStops = async ({
   feedId,
   routeId,
   tripId,
+  directionId,
 }: GetTransitRouteStopsOptions) =>
   apiRequest<TransitRouteStopsResponse>(`/transit/routes/${routeId}/stops`, {
     params: {
       feedId,
       tripId,
+      directionId,
     },
   });
+
+export const getTransitRoutes = async ({ feedId }: GetTransitRoutesOptions) =>
+  apiRequest<TransitRoutesResponse>('/transit/routes', { params: { feedId } });
+
+export const getTransitStopSchedule = async ({ feedId, stopId, date }: GetTransitStopScheduleOptions) =>
+  apiRequest<TransitStopScheduleResponse>(`/transit/stops/${stopId}/schedule`, { params: { feedId, date } });

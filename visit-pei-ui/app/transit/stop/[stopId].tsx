@@ -17,9 +17,17 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { COLOR } from '../../../styles';
 import { useTransitStopArrivalsQuery } from '../../../src/services/query/transit/useTransitStopArrivalsQuery';
+import { useTransitStopScheduleQuery } from '../../../src/services/query/transit/useTransitStopScheduleQuery';
 import type { TransitArrival, TransitServedRoute } from '../../../src/types/api';
 
-const formatArrivalCountdown = (departureAtIso: string, now: number) => {
+const formatClockTime = (departureAtIso: string) =>
+  new Intl.DateTimeFormat('en-CA', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(departureAtIso));
+
+const formatCountdownLabel = (departureAtIso: string, now: number) => {
   const diffMs = new Date(departureAtIso).getTime() - now;
   if (diffMs <= 60 * 1000 && diffMs >= -60 * 1000) {
     return 'Now';
@@ -33,19 +41,11 @@ const formatArrivalCountdown = (departureAtIso: string, now: number) => {
   if (totalMinutes >= 120) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    return minutes === 0
-      ? `${hours} hr left`
-      : `${hours} hr ${minutes} min left`;
+    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
   }
 
-  return `${totalMinutes} min left`;
+  return `${totalMinutes} min`;
 };
-
-const formatClockTime = (departureAtIso: string) =>
-  new Intl.DateTimeFormat('en-CA', {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(departureAtIso));
 
 const getRouteNumber = (arrival: TransitArrival) =>
   arrival.routeShortName?.trim() ||
@@ -55,16 +55,6 @@ const getRouteNumber = (arrival: TransitArrival) =>
 const getRouteTitle = (arrival: TransitArrival) =>
   arrival.routeLongName?.trim() ||
   arrival.headsign?.trim() ||
-  'Transit line';
-
-const getServedRouteNumber = (route: TransitServedRoute) =>
-  route.routeShortName?.trim() ||
-  route.routeId.split(':').pop()?.trim() ||
-  route.routeId;
-
-const getServedRouteTitle = (route: TransitServedRoute) =>
-  route.routeLongName?.trim() ||
-  route.headsign?.trim() ||
   'Transit line';
 
 const openStopInMaps = async (lat: number | null, lon: number | null, label: string) => {
@@ -98,11 +88,11 @@ const cardShadow = Platform.select({
 export default function StopDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [now, setNow] = useState(() => Date.now());
   const { feedId, stopId } = useLocalSearchParams<{
     feedId?: string;
     stopId: string;
   }>();
-  const [now, setNow] = useState(() => Date.now());
   const stopQuery = useTransitStopArrivalsQuery(
     {
       feedId,
@@ -110,6 +100,11 @@ export default function StopDetailsScreen() {
       limit: 14,
     },
     Boolean(stopId),
+  );
+  const [showFullSchedule, setShowFullSchedule] = useState(false);
+  const scheduleQuery = useTransitStopScheduleQuery(
+    { feedId, stopId: stopId ?? '' },
+    showFullSchedule && Boolean(stopId),
   );
 
   useEffect(() => {
@@ -122,10 +117,6 @@ export default function StopDetailsScreen() {
 
   const stop = stopQuery.data?.stop ?? null;
   const arrivals = useMemo(() => stopQuery.data?.items ?? [], [stopQuery.data?.items]);
-  const servedRoutes = useMemo(
-    () => stopQuery.data?.servedRoutes ?? [],
-    [stopQuery.data?.servedRoutes],
-  );
   const groupedRoutes = useMemo(() => {
     const map = new Map<string, TransitArrival[]>();
 
@@ -136,12 +127,28 @@ export default function StopDetailsScreen() {
       map.set(key, current);
     }
 
-    return Array.from(map.entries()).map(([routeId, items]) => ({
-      routeId,
-      first: items[0],
-      items,
-    }));
-  }, [arrivals]);
+    return Array.from(map.entries())
+      .map(([routeId, items]) => {
+        const upcomingItems = items.filter(
+          (item) => new Date(item.departureAtIso).getTime() >= now - 60 * 1000,
+        );
+
+        if (upcomingItems.length === 0) {
+          return null;
+        }
+
+        return {
+          routeId,
+          first: upcomingItems[0],
+          items: upcomingItems,
+        };
+      })
+      .filter(Boolean) as {
+      routeId: string;
+      first: TransitArrival;
+      items: TransitArrival[];
+    }[];
+  }, [arrivals, now]);
 
   const mapRegion = stop?.lat != null && stop.lon != null
     ? {
@@ -236,15 +243,28 @@ export default function StopDetailsScreen() {
                 <MaterialCommunityIcons
                   name='map-marker-right'
                   size={18}
-                  color={COLOR.whiteText}
+                  color={COLOR.brandGreen}
                 />
                 <Text style={styles.primaryActionText}>Open in Maps</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Next arrivals</Text>
-              <Text style={styles.sectionMeta}>{arrivals.length} trips</Text>
+            {(stopQuery.data?.servedRoutes?.length ?? 0) > 0 ? (
+              <View style={styles.servedRoutesRow}>
+                {stopQuery.data!.servedRoutes.map((r: TransitServedRoute) => (
+                  <View key={r.routeId} style={styles.servedRouteBadge}>
+                    <MaterialCommunityIcons name='bus' size={12} color={COLOR.brandGreen} />
+                    <Text style={styles.servedRouteText}>
+                      {r.routeShortName?.trim() || r.routeId.split(':').pop()?.trim() || r.routeId}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <View>
+              <Text style={styles.arrivalsTitle}>Next arrivals</Text>
+              <Text style={styles.arrivalsSubtitle}>Upcoming arrivals of lines to this station</Text>
             </View>
 
             <View style={styles.arrivalsList}>
@@ -267,40 +287,40 @@ export default function StopDetailsScreen() {
                   style={styles.arrivalCard}
                 >
                   <View style={styles.arrivalMain}>
-                    <View style={styles.routeBadge}>
+                    <View style={styles.arrivalRowHeader}>
+                      <View style={styles.routeBadge}>
+                        <View style={styles.routeBadgeInner}>
+                          <MaterialCommunityIcons name='bus' size={13} color={COLOR.brandGreen} />
+                          <Text style={styles.routeBadgeText}>{getRouteNumber(first)}</Text>
+                        </View>
+                        <View style={styles.routeBadgeStrip} />
+                      </View>
+
+                      <View style={styles.arrivalCopy}>
+                        <Text style={styles.arrivalTitle} numberOfLines={2}>
+                          {getRouteTitle(first)}
+                        </Text>
+
+                        <Text style={styles.arrivalSubtitle}>Scheduled time</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.arrivalAside}>
+                    <View style={styles.countdownPill}>
                       <MaterialCommunityIcons
-                        name='bus'
+                        name='clock-outline'
                         size={14}
                         color={COLOR.brandGreen}
                       />
-                      <Text style={styles.routeBadgeText}>
-                        {getRouteNumber(first)}
+                      <Text style={styles.countdownPrimaryText}>
+                        {formatCountdownLabel(first.departureAtIso, now)}
                       </Text>
                     </View>
-
-                    <Text style={styles.arrivalTitle} numberOfLines={2}>
-                      {getRouteTitle(first)}
+                    <Text style={styles.countdownText}>
+                      {items.slice(1, 3).map((item) => formatClockTime(item.departureAtIso)).join(', ') ||
+                        formatClockTime(first.departureAtIso)}
                     </Text>
-
-                    <Text style={styles.arrivalSubtitle}>
-                      Upcoming: {items.slice(0, 3).map((item) => formatClockTime(item.departureAtIso)).join(', ')}
-                    </Text>
-                  </View>
-
-                  <View style={styles.countdownPill}>
-                    <Text style={styles.countdownPrimaryText}>
-                      {formatClockTime(first.departureAtIso)}
-                    </Text>
-                    <View style={styles.countdownSecondaryRow}>
-                      <MaterialCommunityIcons
-                        name='clock-outline'
-                        size={12}
-                        color='#1e67c6'
-                      />
-                      <Text style={styles.countdownText}>
-                        {formatArrivalCountdown(first.departureAtIso, now)}
-                      </Text>
-                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -309,62 +329,45 @@ export default function StopDetailsScreen() {
                 <View style={styles.stateCard}>
                   <Text style={styles.stateTitle}>No arrivals right now</Text>
                   <Text style={styles.stateDescription}>
-                    There are no scheduled upcoming trips for this stop right now. The lines below still serve this stop.
+                    There are no scheduled upcoming trips for this stop right now.
                   </Text>
                 </View>
               ) : null}
             </View>
 
-            {servedRoutes.length > 0 ? (
-              <>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Lines serving this stop</Text>
-                  <Text style={styles.sectionMeta}>{servedRoutes.length} lines</Text>
-                </View>
+            <TouchableOpacity
+              activeOpacity={0.84}
+              onPress={() => setShowFullSchedule((v) => !v)}
+              style={styles.scheduleToggle}
+            >
+              <MaterialCommunityIcons
+                name={showFullSchedule ? 'chevron-up' : 'clock-outline'}
+                size={16}
+                color={COLOR.brandGreen}
+              />
+              <Text style={styles.scheduleToggleText}>
+                {showFullSchedule ? 'Hide full schedule' : "Today's full schedule"}
+              </Text>
+            </TouchableOpacity>
 
-                <View style={styles.arrivalsList}>
-                  {servedRoutes.map((route) => (
-                    <TouchableOpacity
-                      key={route.routeId}
-                      activeOpacity={0.84}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/transit/route/[routeId]',
-                          params: {
-                            feedId,
-                            routeId: route.routeId,
-                            focusStopId: stopId,
-                            tripId: route.tripId ?? undefined,
-                          },
-                        })
-                      }
-                      style={styles.arrivalCard}
-                    >
-                      <View style={styles.arrivalMain}>
-                        <View style={styles.routeBadge}>
-                          <Text style={styles.routeBadgeText}>
-                            {getServedRouteNumber(route)}
-                          </Text>
-                        </View>
-
-                        <Text style={styles.arrivalTitle} numberOfLines={2}>
-                          {getServedRouteTitle(route)}
-                        </Text>
-
-                        <Text style={styles.arrivalSubtitle}>
-                          Tap to view the full line and stop sequence.
+            {showFullSchedule ? (
+              <View style={styles.fullScheduleSection}>
+                {scheduleQuery.isPending ? (
+                  <Text style={styles.scheduleLoadingText}>Loading...</Text>
+                ) : (scheduleQuery.data?.items ?? []).length === 0 ? (
+                  <Text style={styles.scheduleLoadingText}>No departures found for today.</Text>
+                ) : (
+                  <View style={styles.scheduleTimeGrid}>
+                    {(scheduleQuery.data?.items ?? []).map((item, idx) => (
+                      <View key={`${item.tripId}-${idx}`} style={styles.scheduleTimeChip}>
+                        <Text style={styles.scheduleTimeChipText}>
+                          {new Intl.DateTimeFormat('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(item.departureAtIso))}
                         </Text>
                       </View>
-
-                      <MaterialCommunityIcons
-                        name='chevron-right'
-                        size={22}
-                        color={COLOR.brandGreen}
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
+                    ))}
+                  </View>
+                )}
+              </View>
             ) : null}
           </Surface>
         </ScrollView>
@@ -432,9 +435,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#16202a',
-    fontSize: 30,
+    fontSize: 22,
     fontWeight: '800',
-    lineHeight: 36,
+    lineHeight: 28,
   },
   subtitle: {
     color: '#6b7e8d',
@@ -448,61 +451,82 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: 999,
     paddingHorizontal: 16,
-    backgroundColor: '#2f8fff',
+    backgroundColor: COLOR.lightGreen,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   primaryActionText: {
-    color: COLOR.whiteText,
+    color: COLOR.brandGreen,
     fontSize: 14,
     fontWeight: '800',
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
+  arrivalsTitle: {
     color: '#16202a',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
+    lineHeight: 26,
   },
-  sectionMeta: {
-    color: '#4aa7ff',
-    fontSize: 14,
-    fontWeight: '700',
+  arrivalsSubtitle: {
+    color: '#6b7e8d',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
   },
   arrivalsList: {
-    gap: 12,
+    gap: 0,
   },
   arrivalCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
-    borderRadius: 20,
-    padding: 14,
-    backgroundColor: '#f8fbfd',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 121, 96, 0.08)',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
   },
   arrivalMain: {
     flex: 1,
-    gap: 8,
+    gap: 6,
+  },
+  arrivalRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  arrivalAside: {
+    alignItems: 'center',
+    minWidth: 88,
   },
   routeBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: COLOR.brandGreen,
+    minWidth: 56,
+    borderRadius: 4,
+    overflow: 'hidden',
+    alignItems: 'center',
+    backgroundColor: '#efefef',
+  },
+  routeBadgeInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: 6,
+    paddingBottom: 4,
+    paddingHorizontal: 8,
   },
   routeBadgeText: {
-    color: COLOR.whiteText,
+    color: '#16202a',
     fontSize: 13,
     fontWeight: '800',
+  },
+  routeBadgeStrip: {
+    alignSelf: 'stretch',
+    height: 4,
+    backgroundColor: COLOR.brandGreen,
+  },
+  arrivalCopy: {
+    flex: 1,
+    gap: 5,
   },
   arrivalTitle: {
     color: '#16202a',
@@ -516,31 +540,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   countdownPill: {
-    minWidth: 74,
+    minWidth: 64,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
+    borderRadius: 4,
     paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: '#eaf4ff',
+    paddingVertical: 8,
+    backgroundColor: '#efefef',
+    gap: 6,
   },
   countdownPrimaryText: {
-    color: '#16355b',
+    color: '#16202a',
     fontSize: 14,
     fontWeight: '800',
     lineHeight: 18,
   },
-  countdownSecondaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
   countdownText: {
-    color: '#1e67c6',
+    color: '#6b7e8d',
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 16,
+    marginTop: 4,
   },
   stateCard: {
     borderRadius: 20,
@@ -558,5 +579,82 @@ const styles = StyleSheet.create({
     color: '#667887',
     fontSize: 14,
     lineHeight: 20,
+  },
+  servedRoutesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  servedRouteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    backgroundColor: '#efefef',
+  },
+  servedRouteText: {
+    color: '#16202a',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  scheduleToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 121, 96, 0.10)',
+  },
+  scheduleToggleText: {
+    color: COLOR.brandGreen,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  fullScheduleSection: {
+    gap: 0,
+  },
+  fullScheduleTitle: {
+    color: '#16202a',
+    fontSize: 15,
+    fontWeight: '800',
+    paddingBottom: 10,
+  },
+  scheduleLoadingText: {
+    color: '#6b7e8d',
+    fontSize: 14,
+    paddingVertical: 8,
+  },
+  routeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: '#efefef',
+  },
+  routeBoxText: {
+    color: '#16202a',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  scheduleTimeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingTop: 4,
+  },
+  scheduleTimeChip: {
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#efefef',
+  },
+  scheduleTimeChipText: {
+    color: '#16202a',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

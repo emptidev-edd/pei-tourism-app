@@ -19,8 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../styles';
 import { useNearbyTransitStopsQuery } from '../../src/services/query/transit/useNearbyTransitStopsQuery';
+import { useTransitRoutesQuery } from '../../src/services/query/transit/useTransitRoutesQuery';
 import { useTransitStopArrivalsQuery } from '../../src/services/query/transit/useTransitStopArrivalsQuery';
-import type { TransitArrival, TransitStop } from '../../src/types/api';
+import type { TransitArrival, TransitRoute, TransitStop } from '../../src/types/api';
 
 const DEFAULT_REGION = {
   latitude: 46.2382,
@@ -37,18 +38,6 @@ const SHEET_MIDPOINT = (COLLAPSED_SHEET + EXPANDED_SHEET) / 2;
 const clampSheetHeight = (value: number) =>
   Math.min(EXPANDED_SHEET, Math.max(COLLAPSED_SHEET, value));
 
-const formatDistance = (meters?: number) => {
-  if (meters == null) {
-    return 'Nearby';
-  }
-
-  if (meters < 1000) {
-    return `${Math.round(meters)} m away`;
-  }
-
-  return `${(meters / 1000).toFixed(1)} km away`;
-};
-
 const formatWalkTime = (meters?: number) => {
   if (meters == null) {
     return 'Near you';
@@ -57,6 +46,24 @@ const formatWalkTime = (meters?: number) => {
   const minutes = Math.max(1, Math.round(meters / 80));
   return `${minutes} min walk`;
 };
+
+const formatClockTime = (departureAtIso: string) =>
+  new Intl.DateTimeFormat('en-CA', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(departureAtIso));
+
+const getUpcomingArrivals = (items: TransitArrival[], now: number) =>
+  items.filter((item) => new Date(item.departureAtIso).getTime() >= now - 60 * 1000);
+
+const formatArrivalTimes = (items: TransitArrival[]) =>
+  items
+    .slice(1, 3)
+    .map((item) => {
+      return formatClockTime(item.departureAtIso);
+    })
+    .join(', ');
 
 const formatArrivalCountdown = (departureAtIso: string, now: number) => {
   const diffMs = new Date(departureAtIso).getTime() - now;
@@ -72,25 +79,11 @@ const formatArrivalCountdown = (departureAtIso: string, now: number) => {
   if (totalMinutes >= 120) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    return minutes === 0
-      ? `${hours} hr left`
-      : `${hours} hr ${minutes} min left`;
+    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
   }
 
-  return `${totalMinutes} min left`;
+  return `${totalMinutes} min`;
 };
-
-const formatArrivalTimes = (items: TransitArrival[]) =>
-  items
-    .slice(0, 3)
-    .map((item) => {
-      const date = new Date(item.departureAtIso);
-      return new Intl.DateTimeFormat('en-CA', {
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(date);
-    })
-    .join(', ');
 
 const getRouteNumber = (arrival: TransitArrival) =>
   arrival.routeShortName?.trim() ||
@@ -114,6 +107,18 @@ const cardShadow = Platform.select({
   },
 });
 
+const COACH_FEED = 'transitland:f-coachatlantic~pe~ca';
+
+const formatServiceDays = (days: string[]): string => {
+  const s = new Set(days);
+  if (['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].every(d => s.has(d))) return 'Daily';
+  if (['monday','tuesday','wednesday','thursday','friday'].every(d => s.has(d)) && !s.has('saturday') && !s.has('sunday')) return 'Mon–Fri';
+  if (['monday','tuesday','wednesday','thursday','friday','saturday'].every(d => s.has(d)) && !s.has('sunday')) return 'Mon–Sat';
+  if (s.has('saturday') && s.has('sunday') && !['monday','tuesday','wednesday','thursday','friday'].some(d => s.has(d))) return 'Weekends';
+  const abbr: Record<string, string> = { monday:'Mon',tuesday:'Tue',wednesday:'Wed',thursday:'Thu',friday:'Fri',saturday:'Sat',sunday:'Sun' };
+  return days.map(d => abbr[d] ?? d).join(', ') || 'See schedule';
+};
+
 export default function TransitTab() {
   const mapRef = useRef<MapView | null>(null);
   const sheetAnim = useRef(new Animated.Value(COLLAPSED_SHEET)).current;
@@ -121,6 +126,7 @@ export default function TransitTab() {
   const dragStartHeightRef = useRef(COLLAPSED_SHEET);
   const [searchText, setSearchText] = useState('');
   const [sheetExpanded, setSheetExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'nearby' | 'coach'>('nearby');
   const [locationStatus, setLocationStatus] = useState<
     'loading' | 'granted' | 'fallback'
   >('loading');
@@ -176,14 +182,6 @@ export default function TransitTab() {
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 30000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     const listenerId = sheetAnim.addListener(({ value }) => {
       sheetHeightRef.current = value;
     });
@@ -192,6 +190,14 @@ export default function TransitTab() {
       sheetAnim.removeListener(listenerId);
     };
   }, [sheetAnim]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const snapSheetTo = (expanded: boolean) => {
     setSheetExpanded(expanded);
@@ -290,8 +296,26 @@ export default function TransitTab() {
     Boolean(selectedStop?.stopId),
   );
 
-  const arrivals = stopArrivalsQuery.data?.items ?? [];
-  const featuredArrivals = arrivals.slice(0, 3);
+  const routesQuery = useTransitRoutesQuery({ feedId: COACH_FEED }, activeTab === 'coach');
+
+  const arrivals = useMemo(() => stopArrivalsQuery.data?.items ?? [], [stopArrivalsQuery.data?.items]);
+  const featuredArrivals = useMemo(() => {
+    const map = new Map<string, TransitArrival[]>();
+
+    arrivals.forEach((item) => {
+      if (new Date(item.departureAtIso).getTime() < now - 60 * 1000) {
+        return;
+      }
+
+      const current = map.get(item.routeId) ?? [];
+      current.push(item);
+      map.set(item.routeId, current);
+    });
+
+    return Array.from(map.values())
+      .map((items) => items[0])
+      .slice(0, 3);
+  }, [arrivals, now]);
 
   const recenterMap = () => {
     setMapRegion(userRegion);
@@ -409,9 +433,24 @@ export default function TransitTab() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Nearby Stops</Text>
-                <Text style={styles.sheetMeta}>{filteredStops.length} found</Text>
+              <View style={styles.tabBar}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setActiveTab('nearby')}
+                  style={[styles.tabItem, activeTab === 'nearby' && styles.tabItemActive]}
+                >
+                  <Text style={[styles.tabText, activeTab === 'nearby' && styles.tabTextActive]}>Nearby</Text>
+                  <Text style={styles.tabCount}>{activeTab === 'nearby' ? `${filteredStops.length}` : ''}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setActiveTab('coach')}
+                  style={[styles.tabItem, activeTab === 'coach' && styles.tabItemActive]}
+                >
+                  <Text style={[styles.tabText, activeTab === 'coach' && styles.tabTextActive]}>Coach Atlantic</Text>
+                  <Text style={styles.tabCount}>{activeTab === 'coach' && routesQuery.data ? `${routesQuery.data.count}` : ''}</Text>
+                </TouchableOpacity>
               </View>
 
               {locationStatus === 'fallback' ? (
@@ -451,11 +490,12 @@ export default function TransitTab() {
               {!nearbyStopsQuery.isPending &&
               !nearbyStopsQuery.isError &&
               selectedStop ? (
+                activeTab === 'nearby' ? (
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.sheetContent}
                 >
-                  <Surface style={styles.featuredStopCard} elevation={0}>
+	                  <Surface style={styles.featuredStopCard} elevation={0}>
                     <View style={styles.featuredStopHeader}>
                       <View style={styles.featuredStopCopy}>
                         <Text style={styles.featuredStopTitle} numberOfLines={2}>
@@ -467,9 +507,12 @@ export default function TransitTab() {
                             : selectedStop.stopId}
                           {' · '}
                           {formatWalkTime(selectedStop.meters)}
-                          {' · '}
-                          {formatDistance(selectedStop.meters)}
                         </Text>
+                        {featuredArrivals.length > 0 && (
+                          <Text style={styles.featuredStopRoutes} numberOfLines={1}>
+                            {featuredArrivals.map(getRouteNumber).join(', ')}
+                          </Text>
+                        )}
                       </View>
 
                       <TouchableOpacity
@@ -484,39 +527,18 @@ export default function TransitTab() {
                           })
                         }
                         style={styles.stationButton}
-                      >
-                        <MaterialCommunityIcons
-                          name='bus-stop'
-                          size={18}
-                          color={COLOR.whiteText}
-                        />
-                        <Text style={styles.stationButtonText}>Station</Text>
-                      </TouchableOpacity>
-                    </View>
+	                      >
+	                        <MaterialCommunityIcons
+	                          name='bus-stop'
+	                          size={18}
+	                          color={COLOR.brandGreen}
+	                        />
+	                        <Text style={styles.stationButtonText}>Station</Text>
+	                      </TouchableOpacity>
+	                    </View>
 
-                    <View style={styles.lineChipsRow}>
-                      {featuredArrivals.length > 0 ? (
-                        featuredArrivals.map((arrival) => (
-                          <View
-                            key={`${arrival.routeId}-${arrival.tripId}`}
-                            style={styles.lineChip}
-                          >
-                            <Text style={styles.lineChipText}>
-                              {getRouteNumber(arrival)}
-                            </Text>
-                          </View>
-                        ))
-                      ) : (
-                        <View style={styles.lineChipMuted}>
-                          <Text style={styles.lineChipMutedText}>
-                            No upcoming trips found
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <View style={styles.arrivalsList}>
-                      {featuredArrivals.map((arrival) => (
+	                    <View style={styles.arrivalsList}>
+	                      {featuredArrivals.map((arrival) => (
                         <TouchableOpacity
                           key={`${arrival.routeId}-${arrival.tripId}-featured`}
                           activeOpacity={0.84}
@@ -532,47 +554,55 @@ export default function TransitTab() {
                               },
                             })
                           }
-                          style={styles.arrivalCard}
-                        >
-                          <View style={styles.arrivalLeft}>
-                            <View style={styles.routeBadge}>
-                              <Text style={styles.routeBadgeText}>
-                                {getRouteNumber(arrival)}
-                              </Text>
-                            </View>
-                            <Text style={styles.arrivalHeadsign} numberOfLines={2}>
-                              {getRouteTitle(arrival)}
-                            </Text>
-                            <Text style={styles.arrivalTimes}>
-                              {formatArrivalTimes(
-                                arrivals.filter(
-                                  (item) => item.routeId === arrival.routeId,
-                                ),
-                              )}
-                            </Text>
-                          </View>
+	                          style={styles.arrivalCard}
+	                        >
+	                          <View style={styles.arrivalLeft}>
+	                            <View style={styles.arrivalRowHeader}>
+	                              <View style={styles.routeBox}>
+	                                <MaterialCommunityIcons
+	                                  name='bus'
+	                                  size={15}
+	                                  color={COLOR.brandGreen}
+	                                />
+	                                <View style={styles.routeBoxDivider} />
+	                                <Text style={styles.routeBoxText}>
+	                                  {getRouteNumber(arrival)}
+	                                </Text>
+	                              </View>
+	                              <View style={styles.arrivalCopy}>
+	                                <Text style={styles.arrivalHeadsign} numberOfLines={2}>
+	                                  {getRouteTitle(arrival)}
+	                                </Text>
+	                                <Text style={styles.arrivalTimes}>
+	                                  Scheduled time
+	                                </Text>
+	                              </View>
+	                            </View>
+	                          </View>
 
-                          <View style={styles.countdownPill}>
-                            <Text style={styles.countdownPrimaryText}>
-                              {new Intl.DateTimeFormat('en-CA', {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              }).format(new Date(arrival.departureAtIso))}
-                            </Text>
-                            <View style={styles.countdownSecondaryRow}>
-                              <MaterialCommunityIcons
-                                name='clock-outline'
-                                size={12}
-                                color='#1e67c6'
-                              />
-                              <Text style={styles.countdownPillText}>
-                                {formatArrivalCountdown(arrival.departureAtIso, now)}
-                              </Text>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+	                          <View style={styles.arrivalAside}>
+	                            <View style={styles.countdownPill}>
+	                              <MaterialCommunityIcons
+	                                name='clock-outline'
+	                                size={14}
+	                                color={COLOR.brandGreen}
+	                              />
+	                              <Text style={styles.countdownPrimaryText}>
+	                                {formatArrivalCountdown(arrival.departureAtIso, now)}
+	                              </Text>
+	                            </View>
+	                            <Text style={styles.countdownPillText}>
+	                              {formatArrivalTimes(
+	                                getUpcomingArrivals(
+	                                  arrivals.filter((item) => item.routeId === arrival.routeId),
+	                                  now,
+	                                ),
+	                              ) || formatClockTime(arrival.departureAtIso)}
+	                            </Text>
+	                          </View>
+	                        </TouchableOpacity>
+	                      ))}
+	                    </View>
 
                     <TouchableOpacity
                       activeOpacity={0.84}
@@ -584,14 +614,14 @@ export default function TransitTab() {
                             feedId: selectedStop.feedId,
                           },
                         })
-                      }
-                      style={styles.viewAllButton}
-                    >
-                      <Text style={styles.viewAllText}>
-                        View all lines for this stop
-                      </Text>
-                    </TouchableOpacity>
-                  </Surface>
+	                      }
+	                      style={styles.viewAllButton}
+	                    >
+	                      <Text style={styles.viewAllText}>
+	                        View all next arrivals
+	                      </Text>
+	                    </TouchableOpacity>
+	                  </Surface>
 
                   <View style={styles.nearbyList}>
                     <Text style={styles.nearbyListTitle}>More nearby stops</Text>
@@ -622,21 +652,72 @@ export default function TransitTab() {
                               {stop.name ?? stop.stopId}
                             </Text>
                             <Text style={styles.stopMeta} numberOfLines={1}>
-                              {formatWalkTime(stop.meters)}
-                              {' · '}
                               {stop.code ? `Stop ${stop.code}` : stop.stopId}
                             </Text>
                           </View>
 
-                          <MaterialCommunityIcons
-                            name='chevron-right'
-                            size={20}
-                            color={selected ? COLOR.brandGreen : COLOR.mutedText}
-                          />
+                          <Text style={styles.stopDistance}>
+                            {formatWalkTime(stop.meters)}
+                          </Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
+                </ScrollView>
+                ) : null
+              ) : null}
+
+              {activeTab === 'coach' ? (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent}>
+                  {routesQuery.isPending ? (
+                    <View style={styles.stateCard}>
+                      <Text style={styles.stateTitle}>Loading routes...</Text>
+                      <Text style={styles.stateDescription}>Fetching Coach Atlantic PEI schedule.</Text>
+                    </View>
+                  ) : routesQuery.isError ? (
+                    <View style={styles.stateCard}>
+                      <Text style={styles.stateTitle}>Routes unavailable</Text>
+                      <Text style={styles.stateDescription}>Could not load routes right now.</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.coachRouteList}>
+                      {(routesQuery.data?.items ?? []).map((route: TransitRoute) => (
+                        <TouchableOpacity
+                          key={route.routeId}
+                          activeOpacity={0.84}
+                          onPress={() =>
+                            router.push({
+                              pathname: '/transit/route/[routeId]',
+                              params: {
+                                feedId: COACH_FEED,
+                                routeId: route.routeId,
+                                tripId: route.directions[0]?.tripId,
+                                directionId: String(route.directions[0]?.directionId ?? 0),
+                              },
+                            })
+                          }
+                          style={styles.coachRouteRow}
+                        >
+                          <View style={styles.routeBox}>
+                            <MaterialCommunityIcons name='bus' size={14} color={COLOR.brandGreen} />
+                            <Text style={styles.routeBoxText}>
+                              {route.shortName?.trim() || route.routeId.split(':').pop()?.trim() || route.routeId}
+                            </Text>
+                          </View>
+
+                          <View style={styles.coachRouteCopy}>
+                            <Text style={styles.coachRouteName} numberOfLines={2}>
+                              {route.longName?.trim() || 'Transit route'}
+                            </Text>
+                          </View>
+
+                          <View style={styles.serviceDaysBadge}>
+                            <Text style={styles.serviceDaysText}>{formatServiceDays(route.serviceDays)}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </ScrollView>
               ) : null}
             </Surface>
@@ -738,20 +819,68 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(17, 24, 39, 0.14)',
   },
-  sheetHeader: {
+  tabBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.07)',
     marginBottom: 14,
   },
-  sheetTitle: {
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: COLOR.brandGreen,
+  },
+  tabText: {
+    color: '#6b7e8d',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tabTextActive: {
     color: '#16202a',
-    fontSize: 18,
     fontWeight: '800',
   },
-  sheetMeta: {
-    color: '#4aa7ff',
-    fontSize: 14,
+  tabCount: {
+    color: COLOR.brandGreen,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  coachRouteList: {
+    gap: 0,
+  },
+  coachRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
+  },
+  coachRouteCopy: {
+    flex: 1,
+  },
+  coachRouteName: {
+    color: '#16202a',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  serviceDaysBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    backgroundColor: '#efefef',
+  },
+  serviceDaysText: {
+    color: '#6b7e8d',
+    fontSize: 11,
     fontWeight: '700',
   },
   noticeCard: {
@@ -792,10 +921,8 @@ const styles = StyleSheet.create({
   },
   featuredStopCard: {
     borderRadius: 24,
-    padding: 16,
+    paddingTop: 6,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 121, 96, 0.08)',
   },
   featuredStopHeader: {
     flexDirection: 'row',
@@ -809,87 +936,78 @@ const styles = StyleSheet.create({
   },
   featuredStopTitle: {
     color: '#16202a',
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '800',
-    lineHeight: 30,
+    lineHeight: 24,
   },
   featuredStopMeta: {
     color: '#6b7e8d',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  featuredStopRoutes: {
+    color: '#6b7e8d',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
   },
   stationButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: '#2f8fff',
+    gap: 6,
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#efefef',
   },
   stationButtonText: {
-    color: COLOR.whiteText,
+    color: '#16202a',
     fontSize: 13,
     fontWeight: '800',
-  },
-  lineChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 16,
-  },
-  lineChip: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#e6f2ef',
-  },
-  lineChipText: {
-    color: COLOR.brandGreen,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  lineChipMuted: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#f5f8fb',
-  },
-  lineChipMutedText: {
-    color: '#6b7e8d',
-    fontSize: 13,
-    fontWeight: '700',
   },
   arrivalsList: {
     marginTop: 16,
-    gap: 12,
+    gap: 0,
   },
   arrivalCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
-    borderRadius: 20,
-    padding: 14,
-    backgroundColor: '#f8fbfd',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 121, 96, 0.08)',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
   },
   arrivalLeft: {
     flex: 1,
-    gap: 8,
+    gap: 6,
   },
-  routeBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: COLOR.brandGreen,
+  arrivalRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  routeBadgeText: {
-    color: COLOR.whiteText,
+  routeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: '#efefef',
+  },
+  routeBoxDivider: {
+    width: 0,
+  },
+  routeBoxText: {
+    color: '#16202a',
     fontSize: 13,
     fontWeight: '800',
+  },
+  arrivalCopy: {
+    flex: 1,
+    gap: 5,
   },
   arrivalHeadsign: {
     color: '#16202a',
@@ -900,49 +1018,49 @@ const styles = StyleSheet.create({
   arrivalTimes: {
     color: '#6b7e8d',
     fontSize: 13,
-    fontWeight: '600',
+    lineHeight: 18,
+  },
+  arrivalAside: {
+    alignItems: 'center',
+    minWidth: 88,
   },
   countdownPill: {
-    minWidth: 72,
+    minWidth: 64,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#eaf4ff',
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#efefef',
+    gap: 6,
   },
   countdownPrimaryText: {
-    color: '#16355b',
+    color: '#16202a',
     fontSize: 14,
     fontWeight: '800',
     lineHeight: 18,
   },
-  countdownSecondaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
   countdownPillText: {
-    color: '#1e67c6',
+    color: '#6b7e8d',
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 16,
+    marginTop: 4,
   },
   viewAllButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
-    borderRadius: 16,
-    paddingVertical: 14,
-    backgroundColor: 'rgba(47, 143, 255, 0.14)',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
   },
   viewAllText: {
-    color: '#4aa7ff',
+    color: COLOR.brandGreen,
     fontSize: 16,
     fontWeight: '800',
   },
   nearbyList: {
-    gap: 12,
+    gap: 0,
   },
   nearbyListTitle: {
     color: '#16202a',
@@ -953,25 +1071,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 20,
-    paddingHorizontal: 14,
+    paddingHorizontal: 4,
     paddingVertical: 14,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 121, 96, 0.08)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
   },
   stopRowSelected: {
-    borderWidth: 1,
-    borderColor: 'rgba(0, 121, 96, 0.30)',
     backgroundColor: '#f3faf7',
   },
   stopIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f3faf7',
+    backgroundColor: '#efefef',
   },
   stopCopy: {
     flex: 1,
@@ -987,5 +1101,13 @@ const styles = StyleSheet.create({
     color: '#6b7e8d',
     fontSize: 13,
     lineHeight: 18,
+  },
+  stopDistance: {
+    color: '#6b7e8d',
+    fontSize: 12,
+    fontWeight: '600',
+    alignSelf: 'center',
+    minWidth: 52,
+    textAlign: 'right',
   },
 });

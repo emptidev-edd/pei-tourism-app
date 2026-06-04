@@ -32,6 +32,9 @@ const parseGtfsTimeToSeconds = (value?: string | null) => {
   return hour * 3600 + minute * 60 + second;
 };
 
+const getRouteNumber = (routeValue: string, routeShortName?: string | null) =>
+  routeShortName?.trim() || routeValue.split(':').pop()?.trim() || routeValue;
+
 const getStopTimeSeconds = (item: TransitRouteStop) =>
   parseGtfsTimeToSeconds(item.departureTime || item.arrivalTime);
 
@@ -44,6 +47,14 @@ const formatAbsoluteTime = (value?: string | null) => {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value));
+};
+
+const formatGtfsTime = (gtfsTime?: string | null): string | null => {
+  if (!gtfsTime) return null;
+  const parts = gtfsTime.split(':');
+  if (parts.length < 2) return null;
+  const hour = parseInt(parts[0], 10) % 24;
+  return `${String(hour).padStart(2, '0')}:${parts[1]}`;
 };
 
 const formatCountdownLabel = (value?: string | null, now = Date.now()) => {
@@ -64,12 +75,10 @@ const formatCountdownLabel = (value?: string | null, now = Date.now()) => {
   if (totalMinutes >= 120) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    return minutes === 0
-      ? `${hours} hr left`
-      : `${hours} hr ${minutes} min left`;
+    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
   }
 
-  return `${totalMinutes} min left`;
+  return `${totalMinutes} min`;
 };
 
 const cardShadow = Platform.select({
@@ -88,6 +97,7 @@ export default function RouteDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(() => Date.now());
+  const [selectedDirectionId, setSelectedDirectionId] = useState<number>(0);
   const { feedId, focusDepartureAtIso, focusStopId, routeId, tripId } = useLocalSearchParams<{
     feedId?: string;
     focusDepartureAtIso?: string;
@@ -99,7 +109,8 @@ export default function RouteDetailsScreen() {
     {
       feedId,
       routeId: routeId ?? '',
-      tripId,
+      tripId: tripId || undefined,
+      directionId: tripId ? undefined : selectedDirectionId,
     },
     Boolean(routeId),
   );
@@ -263,12 +274,48 @@ export default function RouteDetailsScreen() {
               <MaterialCommunityIcons
                 name='bus'
                 size={16}
-                color={COLOR.whiteText}
+                color={COLOR.brandGreen}
               />
               <Text style={styles.routeBadgeText}>
-                {route?.shortName?.trim() || routeId}
+                {getRouteNumber(routeId, route?.shortName)}
               </Text>
             </View>
+
+            {(routeQuery.data?.availableDirections?.length ?? 0) > 1 ? (() => {
+              const dirs = routeQuery.data!.availableDirections;
+              const allSameHeadsign = dirs.every(d => d.headsign === dirs[0].headsign);
+              const fallbackLabels = ['Outbound', 'Return'];
+              return (
+                <View style={styles.directionToggle}>
+                  {dirs.map((dir, i) => {
+                    const label = allSameHeadsign
+                      ? (fallbackLabels[i] ?? `Direction ${i + 1}`)
+                      : (dir.headsign ?? `Direction ${dir.directionId}`);
+                    return (
+                      <TouchableOpacity
+                        key={dir.directionId}
+                        activeOpacity={0.84}
+                        onPress={() => setSelectedDirectionId(dir.directionId)}
+                        style={[
+                          styles.directionOption,
+                          selectedDirectionId === dir.directionId && styles.directionOptionActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.directionOptionText,
+                            selectedDirectionId === dir.directionId && styles.directionOptionTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              );
+            })() : null}
 
             <Text style={styles.title}>
               {route?.longName?.trim() || 'Transit route'}
@@ -300,105 +347,87 @@ export default function RouteDetailsScreen() {
               {scheduledStops.map((item, index) => {
                 const focused = item.stopId === focusStopId;
                 const active = index === activeStopIndex;
-                const isLast = index === items.length - 1;
+                const isPast = index <= activeStopIndex;
+                const absoluteTime =
+                  formatAbsoluteTime(item.scheduledAtIso) ??
+                  formatGtfsTime(item.departureTime || item.arrivalTime);
                 const countdownLabel = formatCountdownLabel(item.scheduledAtIso, now);
-                const absoluteTime = formatAbsoluteTime(item.scheduledAtIso);
+                const isFirst = index === 0;
+                const isLast = index === scheduledStops.length - 1;
+
+                const lineColor = (above: boolean) => {
+                  if (above) {
+                    return isFirst ? 'transparent' : (index <= activeStopIndex ? COLOR.brandGreen : '#d1d5db');
+                  }
+                  return isLast ? 'transparent' : (index < activeStopIndex ? COLOR.brandGreen : '#d1d5db');
+                };
 
                 return (
-                  <View key={`${item.stopId}-${item.stopSequence}`} style={styles.timelineRow}>
-                    <View style={styles.timelineRail}>
+                  <View
+                    key={`${item.stopId}-${item.stopSequence}`}
+                    style={styles.timelineItem}
+                  >
+                    <View style={styles.timelineLineCol}>
+                      <View style={[styles.timelineLineSeg, { backgroundColor: lineColor(true) }]} />
                       <View
                         style={[
                           styles.timelineDot,
-                          active && styles.timelineDotActive,
+                          isPast ? styles.timelineDotPast : styles.timelineDotFuture,
                           focused && styles.timelineDotFocused,
                         ]}
                       />
-                      {!isLast ? <View style={styles.timelineLine} /> : null}
+                      <View style={[styles.timelineLineSeg, { backgroundColor: lineColor(false) }]} />
                     </View>
 
-                    <TouchableOpacity
-                      activeOpacity={0.84}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/transit/stop/[stopId]',
-                          params: {
-                            feedId,
-                            stopId: item.stopId,
-                          },
-                        })
-                      }
-                      style={[
-                        styles.timelineCard,
-                        active && styles.timelineCardActive,
-                        focused && styles.timelineCardFocused,
-                      ]}
-                    >
-                      <View style={styles.timelineCardHeader}>
-                        <Text
-                          style={[
-                            styles.stopName,
-                            active && styles.stopNameActive,
-                            focused && styles.stopNameFocused,
-                          ]}
-                        >
-                          {item.stop?.name ?? item.stopId}
-                        </Text>
-
-                        {countdownLabel ? (
-                          <View
+                    <View style={styles.timelineContent}>
+                      <View style={styles.stopRow}>
+                        <View style={styles.stopCopy}>
+                          <Text
                             style={[
-                              styles.stopTimePill,
-                              active && styles.stopTimePillActive,
-                              focused && styles.stopTimePillFocused,
+                              styles.stopName,
+                              active && styles.stopNameActive,
+                              focused && styles.stopNameFocused,
                             ]}
                           >
-                            {absoluteTime ? (
-                              <Text
-                                style={[
-                                  styles.stopTimePrimaryText,
-                                  active && styles.stopTimePrimaryTextActive,
-                                  focused && styles.stopTimePrimaryTextFocused,
-                                ]}
-                              >
-                                {absoluteTime}
-                              </Text>
-                            ) : null}
-                            <View style={styles.stopTimeSecondaryRow}>
+                            {item.stop?.name ?? item.stopId}
+                          </Text>
+                          <Text style={styles.stopMeta}>Scheduled time</Text>
+
+                          {focused ? (
+                            <Text style={styles.stopHint}>Your selected stop</Text>
+                          ) : null}
+
+                          {active && !focused ? (
+                            <Text style={styles.stopHint}>Current scheduled stop</Text>
+                          ) : null}
+                        </View>
+
+                        {absoluteTime ? (
+                          <View style={styles.stopTimeAside}>
+                            <View
+                              style={[
+                                styles.stopTimePill,
+                                focused && styles.stopTimePillFocused,
+                              ]}
+                            >
                               <MaterialCommunityIcons
                                 name='clock-outline'
-                                size={11}
-                                color={
-                                  active || focused
-                                    ? COLOR.whiteText
-                                    : '#1e67c6'
-                                }
+                                size={13}
+                                color={focused ? COLOR.whiteText : COLOR.brandGreen}
                               />
                               <Text
                                 style={[
-                                  styles.stopTimePillText,
-                                  active && styles.stopTimePillTextActive,
-                                  focused && styles.stopTimePillTextFocused,
+                                  styles.stopTimePrimaryText,
+                                  focused && styles.stopTimePrimaryTextFocused,
                                 ]}
                               >
-                                {countdownLabel}
+                                {countdownLabel ?? absoluteTime}
                               </Text>
                             </View>
                           </View>
                         ) : null}
                       </View>
-                      <Text style={styles.stopMeta}>
-                        {item.departureTime || item.arrivalTime || 'Scheduled stop'}
-                      </Text>
-
-                      {focused ? (
-                        <Text style={styles.stopHint}>Your selected stop</Text>
-                      ) : null}
-
-                      {active && !focused ? (
-                        <Text style={styles.stopHint}>Current scheduled stop</Text>
-                      ) : null}
-                    </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })}
@@ -468,22 +497,22 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: COLOR.brandGreen,
+    gap: 6,
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#efefef',
   },
   routeBadgeText: {
-    color: COLOR.whiteText,
+    color: '#16202a',
     fontSize: 13,
     fontWeight: '800',
   },
   title: {
     color: '#16202a',
-    fontSize: 30,
+    fontSize: 22,
     fontWeight: '800',
-    lineHeight: 36,
+    lineHeight: 28,
   },
   liveInfoCard: {
     borderRadius: 20,
@@ -518,70 +547,67 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   sectionMeta: {
-    color: '#4aa7ff',
+    color: COLOR.brandGreen,
     fontSize: 14,
     fontWeight: '700',
   },
   timelineList: {
     gap: 0,
   },
-  timelineRow: {
+  timelineItem: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 14,
   },
-  timelineRail: {
-    width: 22,
+  timelineLineCol: {
+    width: 28,
     alignItems: 'center',
   },
+  timelineLineSeg: {
+    flex: 1,
+    width: 2,
+  },
   timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  timelineDotPast: {
+    backgroundColor: COLOR.brandGreen,
+  },
+  timelineDotFuture: {
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+  },
+  timelineDotFocused: {
     width: 14,
     height: 14,
     borderRadius: 7,
-    marginTop: 12,
-    backgroundColor: '#d9e6ec',
-    borderWidth: 2,
-    borderColor: '#8cb29e',
-  },
-  timelineDotFocused: {
     backgroundColor: COLOR.brandGreen,
-    borderColor: '#7ec6b4',
+    borderWidth: 2,
+    borderColor: COLOR.brandGreen,
   },
-  timelineDotActive: {
-    backgroundColor: '#2f8fff',
-    borderColor: '#8cc0ff',
-  },
-  timelineLine: {
+  timelineContent: {
     flex: 1,
-    width: 3,
-    marginTop: 4,
-    marginBottom: -4,
-    backgroundColor: '#b9d8d0',
   },
-  timelineCard: {
+  stopRow: {
     flex: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    backgroundColor: 'transparent',
-    marginBottom: 10,
-  },
-  timelineCardFocused: {
-    backgroundColor: '#f3faf7',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 121, 96, 0.16)',
-  },
-  timelineCardActive: {
-    backgroundColor: '#eef6ff',
-  },
-  timelineCardHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    paddingVertical: 14,
+    paddingLeft: 12,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
+  },
+  stopCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  stopTimeAside: {
+    alignItems: 'flex-end',
   },
   stopName: {
-    flex: 1,
     color: '#4a5f6d',
     fontSize: 15,
     fontWeight: '700',
@@ -597,56 +623,56 @@ const styles = StyleSheet.create({
     color: '#6b7e8d',
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 4,
   },
   stopHint: {
     color: COLOR.brandGreen,
     fontSize: 12,
     fontWeight: '700',
-    marginTop: 8,
+    marginTop: 2,
   },
   stopTimePill: {
-    minWidth: 72,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#eef2f5',
+    gap: 5,
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#efefef',
   },
   stopTimePrimaryText: {
-    color: '#374b58',
+    color: '#16202a',
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 16,
   },
-  stopTimePrimaryTextActive: {
-    color: COLOR.whiteText,
-  },
   stopTimePrimaryTextFocused: {
     color: COLOR.whiteText,
-  },
-  stopTimeSecondaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  stopTimePillActive: {
-    backgroundColor: '#2f8fff',
   },
   stopTimePillFocused: {
     backgroundColor: COLOR.brandGreen,
   },
-  stopTimePillText: {
-    color: '#1e67c6',
-    fontSize: 11,
+  directionToggle: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  directionOption: {
+    flex: 1,
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#efefef',
+    alignItems: 'center',
+  },
+  directionOptionActive: {
+    backgroundColor: COLOR.brandGreen,
+  },
+  directionOptionText: {
+    color: '#6b7e8d',
+    fontSize: 13,
     fontWeight: '700',
-    lineHeight: 14,
   },
-  stopTimePillTextActive: {
+  directionOptionTextActive: {
     color: COLOR.whiteText,
-  },
-  stopTimePillTextFocused: {
-    color: COLOR.whiteText,
+    fontWeight: '800',
   },
 });

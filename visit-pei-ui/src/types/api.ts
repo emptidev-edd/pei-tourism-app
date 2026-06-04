@@ -132,6 +132,9 @@ export type TransitStopArrivalsResponse = {
 };
 
 export type TransitRouteStop = {
+  routeId: string;
+  routeShortName: string | null;
+  routeLongName: string | null;
   stopId: string;
   stopSequence: number;
   arrivalTime: string | null;
@@ -158,6 +161,37 @@ export type TransitRouteStopsResponse = {
     headsign: string | null;
     directionId: number | null;
   };
+  availableDirections: TransitRouteDirection[];
   count: number;
   items: TransitRouteStop[];
+};
+
+export type TransitRouteDirection = {
+  directionId: number;
+  headsign: string | null;
+  tripId: string;
+};
+
+export type TransitRoute = {
+  routeId: string;
+  feedId: string;
+  shortName: string | null;
+  longName: string | null;
+  serviceDays: string[];
+  directions: TransitRouteDirection[];
+};
+
+export type TransitRoutesResponse = {
+  ok: boolean;
+  feedId: string;
+  count: number;
+  items: TransitRoute[];
+};
+
+export type TransitStopScheduleResponse = {
+  ok: boolean;
+  stop: TransitStop | null;
+  date: string;
+  count: number;
+  items: TransitArrival[];
 };
