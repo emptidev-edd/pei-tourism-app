@@ -7,6 +7,8 @@ export const listEvents = async (req: Request, res: Response) => {
   const from = z.string().optional().parse(req.query.from);
   const to = z.string().optional().parse(req.query.to);
   const community = z.string().optional().parse(req.query.community);
+  const sourcesRaw = z.string().optional().parse(req.query.sources);
+  const sources = sourcesRaw ? sourcesRaw.split(',').filter(Boolean) : undefined;
 
   const limit = z.coerce
     .number()
@@ -49,6 +51,7 @@ export const listEvents = async (req: Request, res: Response) => {
   }
 
   if (community) where.community = { equals: community, mode: 'insensitive' };
+  if (sources && sources.length > 0) where.source = { in: sources };
 
   if (q && q.trim()) {
     where.OR = [

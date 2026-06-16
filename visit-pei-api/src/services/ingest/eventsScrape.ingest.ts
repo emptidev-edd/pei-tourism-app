@@ -454,7 +454,7 @@ export const scrapeTourismPeiEvents = async (args: {
 }) => {
   const start = parseIsoDate(args.startDate);
   const end = parseIsoDate(args.endDate);
-  const maxPages = args.maxPages ?? 5;
+  const maxPages = args.maxPages ?? 50;
 
   const allItems: ListItem[] = [];
 

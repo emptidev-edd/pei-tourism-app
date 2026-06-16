@@ -12,6 +12,7 @@ export const queryKeys = {
       limit?: number;
       page?: number;
       q?: string;
+      sources?: string[];
       to?: string;
     }) => ['events', 'list', params] as const,
     detail: (id: string) => ['events', 'detail', id] as const,

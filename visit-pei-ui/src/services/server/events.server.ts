@@ -11,6 +11,7 @@ export type GetEventsOptions = {
   to?: string;
   q?: string;
   community?: string;
+  sources?: string[];
   limit?: number;
   page?: number;
 };
@@ -26,9 +27,10 @@ export const getUpcomingEvents = async ({
 export const getEvents = async ({
   community,
   from,
-  limit = 30,
+  limit = 20,
   page = 1,
   q,
+  sources,
   to,
 }: GetEventsOptions) =>
   apiRequest<EventsListResponse>('/events', {
@@ -38,6 +40,7 @@ export const getEvents = async ({
       limit,
       page,
       q,
+      sources: sources && sources.length > 0 ? sources.join(',') : undefined,
       to,
     },
   });

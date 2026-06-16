@@ -2,7 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useDeferredValue, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   ScrollView,
@@ -18,13 +18,38 @@ import { COLOR } from '../../styles';
 import { useEventsQuery } from '../../src/services/query/events/useEventsQuery';
 import type { TourismEvent } from '../../src/types/api';
 
+const PAGE_LIMIT = 20;
+
 type DateFilterId = 'all' | 'today' | 'week' | 'month';
+type CategoryId =
+  | 'all'
+  | 'tourism-pei'
+  | 'charlottetown'
+  | 'eastlink'
+  | 'summerside'
+  | 'exhibitions'
+  | 'province';
 
 const DATE_FILTERS: { id: DateFilterId; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'today', label: 'Today' },
   { id: 'week', label: 'This Week' },
   { id: 'month', label: 'This Month' },
+];
+
+const CATEGORY_TABS: {
+  id: CategoryId;
+  label: string;
+  sources: string[];
+  community?: string;
+}[] = [
+  { id: 'all', label: 'All Events', sources: [] },
+  { id: 'tourism-pei', label: 'Tourism PEI', sources: ['TOURISM_PEI_SCRAPE'] },
+  { id: 'charlottetown', label: 'Charlottetown', sources: [], community: 'Charlottetown' },
+  { id: 'eastlink', label: 'Eastlink Centre', sources: ['EASTLINK_CENTRE'] },
+  { id: 'summerside', label: 'Summerside', sources: [], community: 'Summerside' },
+  { id: 'exhibitions', label: 'Exhibitions', sources: ['PEI_EXHIBITIONS'] },
+  { id: 'province', label: 'Province', sources: ['GOV_PEI_EVENTS'] },
 ];
 
 const formatLocalDate = (date: Date) => {
@@ -262,19 +287,39 @@ const EventCard = ({ event }: { event: TourismEvent }) => (
 );
 
 export default function EventsTab() {
+  const scrollRef = useRef<ScrollView>(null);
   const [searchText, setSearchText] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] =
     useState<DateFilterId>('week');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
+  const [page, setPage] = useState(1);
 
   const deferredSearchText = useDeferredValue(searchText.trim());
   const dateRange = getDateRange(selectedDateFilter);
+  const activeTab = CATEGORY_TABS.find((t) => t.id === selectedCategory);
+  const activeSources = activeTab?.sources ?? [];
+  const activeCommunity = activeTab?.community;
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDateFilter, selectedCategory, deferredSearchText]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [page]);
+
   const eventsQuery = useEventsQuery({
     from: dateRange.from,
     to: dateRange.to,
     q: deferredSearchText.length > 0 ? deferredSearchText : undefined,
-    limit: 40,
+    sources: activeSources.length > 0 ? activeSources : undefined,
+    community: activeCommunity,
+    limit: PAGE_LIMIT,
+    page,
   });
 
+  const total = eventsQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_LIMIT));
   const items = eventsQuery.data?.items ?? [];
   const sections = groupEventsByDate(items);
 
@@ -285,6 +330,7 @@ export default function EventsTab() {
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
+          ref={scrollRef}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
           contentContainerStyle={styles.contentContainer}
@@ -308,6 +354,36 @@ export default function EventsTab() {
 
           <View style={styles.searchShell}>
             <Surface style={styles.searchCard} elevation={0}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterRow}
+              >
+                {CATEGORY_TABS.map((tab) => {
+                  const selected = tab.id === selectedCategory;
+                  return (
+                    <TouchableOpacity
+                      key={tab.id}
+                      activeOpacity={0.82}
+                      onPress={() => setSelectedCategory(tab.id)}
+                      style={[
+                        styles.categoryChip,
+                        selected && styles.categoryChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          selected && styles.categoryChipTextActive,
+                        ]}
+                      >
+                        {tab.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
               <Searchbar
                 placeholder='Search events or venues'
                 onChangeText={setSearchText}
@@ -352,7 +428,9 @@ export default function EventsTab() {
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLink}>{items.length} found</Text>
+              <Text style={styles.sectionLink}>
+                {total > 0 ? `${total} events` : ''}
+              </Text>
             </View>
 
             {eventsQuery.isPending ? (
@@ -414,6 +492,48 @@ export default function EventsTab() {
                     </View>
                   </View>
                 ))}
+              </View>
+            ) : null}
+
+            {!eventsQuery.isPending && !eventsQuery.isError && totalPages > 1 ? (
+              <View style={styles.paginationRow}>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={() => setPage((p) => p - 1)}
+                  disabled={page <= 1}
+                  style={[
+                    styles.pageButton,
+                    page <= 1 && styles.pageButtonDisabled,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name='chevron-left'
+                    size={20}
+                    color={page <= 1 ? COLOR.mutedText : COLOR.brandGreen}
+                  />
+                </TouchableOpacity>
+
+                <Text style={styles.pageLabel}>
+                  {page} / {totalPages}
+                </Text>
+
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={() => setPage((p) => p + 1)}
+                  disabled={page >= totalPages}
+                  style={[
+                    styles.pageButton,
+                    page >= totalPages && styles.pageButtonDisabled,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name='chevron-right'
+                    size={20}
+                    color={
+                      page >= totalPages ? COLOR.mutedText : COLOR.brandGreen
+                    }
+                  />
+                </TouchableOpacity>
               </View>
             ) : null}
           </View>
@@ -493,6 +613,23 @@ const styles = StyleSheet.create({
   filterRow: {
     gap: 10,
     paddingRight: 8,
+  },
+  categoryChip: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: COLOR.lightGreen,
+  },
+  categoryChipActive: {
+    backgroundColor: COLOR.brandGreen,
+  },
+  categoryChipText: {
+    color: COLOR.brandGreen,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryChipTextActive: {
+    color: COLOR.whiteText,
   },
   filterChip: {
     borderRadius: 999,
@@ -680,6 +817,31 @@ const styles = StyleSheet.create({
     color: COLOR.brandGreen,
     fontSize: 14,
     fontWeight: '800',
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    paddingVertical: 8,
+  },
+  pageButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLOR.lightGreen,
+  },
+  pageButtonDisabled: {
+    backgroundColor: COLOR.surfaceMuted,
+  },
+  pageLabel: {
+    color: COLOR.mainText,
+    fontSize: 15,
+    fontWeight: '700',
+    minWidth: 60,
+    textAlign: 'center',
   },
   stateCard: {
     borderRadius: 20,
