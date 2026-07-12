@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 
 import logger from './middleware/logger.js';
 import errorHandler from './middleware/errorHandler.js';
+import { apiLimiter } from './middleware/rateLimiters.js';
 import corsOptions from './config/corsOptions.js';
 
 import routes from './routes/index.js';
@@ -37,7 +38,7 @@ app.get('/', (_req, res) => {
 app.use('/', express.static(path.join(__dirname, '../public')));
 
 // Routes
-app.use('/api', routes);
+app.use('/api', apiLimiter, routes);
 
 // 404
 app.all(/.*/, (req, res) => {

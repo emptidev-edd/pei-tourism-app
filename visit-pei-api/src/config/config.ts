@@ -5,4 +5,5 @@ export const config = {
     process.env.VIC_LIST_URL ??
     'https://www.tourismpei.com/about-pei/visitor-information-centres',
   runIngestOnBoot: (process.env.RUN_INGEST_ON_BOOT ?? 'false') === 'true',
+  adminApiKey: process.env.ADMIN_API_KEY ?? '',
 };

@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import requireAdminKey from '../middleware/requireAdminKey.js';
+import { adminLimiter } from '../middleware/rateLimiters.js';
 import adminRoutes from './admin.routes.js';
 import placesRoutes from './places.routes.js';
 import eventsRoutes from './events.routes.js';
@@ -9,7 +11,7 @@ import tripRoutes from './trip.routes.js';
 const router = Router();
 
 // Mount sub-routers
-router.use('/admin', adminRoutes);
+router.use('/admin', adminLimiter, requireAdminKey, adminRoutes);
 router.use('/places', placesRoutes);
 router.use('/events', eventsRoutes);
 router.use('/trip', tripRoutes);
