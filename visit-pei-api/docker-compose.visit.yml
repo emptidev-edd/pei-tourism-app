@@ -3,10 +3,8 @@ services:
     image: postgis/postgis:16-3.4
     container_name: visit_upei_db
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: visit_upei
-      POSTGRES_PASSWORD: "VisitUpei_2026!"
-      POSTGRES_DB: visit_upei
+    env_file:
+      - .env.docker
     ports:
       - "5433:5432"
     volumes:
