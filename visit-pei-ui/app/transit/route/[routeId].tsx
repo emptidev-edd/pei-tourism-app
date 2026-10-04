@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { COLOR } from '../../../styles';
 import { useTransitRouteStopsQuery } from '../../../src/services/query/transit/useTransitRouteStopsQuery';
+import { formatCountdownLabel } from '../../../src/utils/transitTime';
 import type { TransitRouteStop } from '../../../src/types/api';
 
 const parseGtfsTimeToSeconds = (value?: string | null) => {
@@ -57,30 +58,6 @@ const formatGtfsTime = (gtfsTime?: string | null): string | null => {
   return `${String(hour).padStart(2, '0')}:${parts[1]}`;
 };
 
-const formatCountdownLabel = (value?: string | null, now = Date.now()) => {
-  if (!value) {
-    return null;
-  }
-
-  const diffMs = new Date(value).getTime() - now;
-  if (diffMs <= 60 * 1000 && diffMs >= -60 * 1000) {
-    return 'Now';
-  }
-
-  if (diffMs < -60 * 1000) {
-    return 'Passed';
-  }
-
-  const totalMinutes = Math.ceil(diffMs / 60000);
-  if (totalMinutes >= 120) {
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
-  }
-
-  return `${totalMinutes} min`;
-};
-
 const cardShadow = Platform.select({
   ios: {
     shadowColor: '#020617',
@@ -97,7 +74,8 @@ export default function RouteDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [now, setNow] = useState(() => Date.now());
-  const [selectedDirectionId, setSelectedDirectionId] = useState<number>(0);
+  // null = show the trip we navigated in with; a number = user picked a direction.
+  const [directionOverride, setDirectionOverride] = useState<number | null>(null);
   const { feedId, focusDepartureAtIso, focusStopId, routeId, tripId } = useLocalSearchParams<{
     feedId?: string;
     focusDepartureAtIso?: string;
@@ -109,11 +87,18 @@ export default function RouteDetailsScreen() {
     {
       feedId,
       routeId: routeId ?? '',
-      tripId: tripId || undefined,
-      directionId: tripId ? undefined : selectedDirectionId,
+      tripId: directionOverride == null ? tripId || undefined : undefined,
+      directionId:
+        directionOverride ?? (tripId ? undefined : 0),
     },
     Boolean(routeId),
   );
+  const activeDirectionId =
+    directionOverride ?? routeQuery.data?.trip?.directionId ?? 0;
+  // Focus params describe the trip we arrived with; they stop applying once
+  // the user switches to another direction (different trip, different times).
+  const focusApplies = Boolean(tripId) && routeQuery.data?.trip?.tripId === tripId;
+  const effectiveFocusStopId = focusApplies ? focusStopId : undefined;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -147,14 +132,14 @@ export default function RouteDetailsScreen() {
       };
 
   const focusStop = useMemo(
-    () => items.find((item) => item.stopId === focusStopId) ?? null,
-    [focusStopId, items],
+    () => items.find((item) => item.stopId === effectiveFocusStopId) ?? null,
+    [effectiveFocusStopId, items],
   );
 
   const focusStopSeconds = focusStop ? getStopTimeSeconds(focusStop) : null;
 
   const scheduledStops = useMemo(() => {
-    if (!focusDepartureAtIso || focusStopSeconds == null) {
+    if (!focusApplies || !focusDepartureAtIso || focusStopSeconds == null) {
       return items.map((item) => ({
         ...item,
         scheduledAtIso: null as string | null,
@@ -178,7 +163,7 @@ export default function RouteDetailsScreen() {
         scheduledAtIso: new Date(focusedAtMs + offsetMs).toISOString(),
       };
     });
-  }, [focusDepartureAtIso, focusStopSeconds, items]);
+  }, [focusApplies, focusDepartureAtIso, focusStopSeconds, items]);
 
   const activeStopIndex = useMemo(() => {
     let latestReachedIndex = -1;
@@ -226,7 +211,7 @@ export default function RouteDetailsScreen() {
                   return null;
                 }
 
-                const focused = item.stopId === focusStopId;
+                const focused = item.stopId === effectiveFocusStopId;
 
                 return (
                   <Marker
@@ -288,23 +273,27 @@ export default function RouteDetailsScreen() {
               return (
                 <View style={styles.directionToggle}>
                   {dirs.map((dir, i) => {
-                    const label = allSameHeadsign
-                      ? (fallbackLabels[i] ?? `Direction ${i + 1}`)
-                      : (dir.headsign ?? `Direction ${dir.directionId}`);
+                    const distinctHeadsign = !allSameHeadsign && dir.headsign?.trim();
+                    const label =
+                      distinctHeadsign ||
+                      (dir.lastStopName?.trim()
+                        ? `To ${dir.lastStopName.trim()}`
+                        : fallbackLabels[i] ?? `Direction ${i + 1}`);
+                    const active = activeDirectionId === dir.directionId;
                     return (
                       <TouchableOpacity
                         key={dir.directionId}
                         activeOpacity={0.84}
-                        onPress={() => setSelectedDirectionId(dir.directionId)}
+                        onPress={() => setDirectionOverride(dir.directionId)}
                         style={[
                           styles.directionOption,
-                          selectedDirectionId === dir.directionId && styles.directionOptionActive,
+                          active && styles.directionOptionActive,
                         ]}
                       >
                         <Text
                           style={[
                             styles.directionOptionText,
-                            selectedDirectionId === dir.directionId && styles.directionOptionTextActive,
+                            active && styles.directionOptionTextActive,
                           ]}
                           numberOfLines={1}
                         >
@@ -345,7 +334,7 @@ export default function RouteDetailsScreen() {
 
             <View style={styles.timelineList}>
               {scheduledStops.map((item, index) => {
-                const focused = item.stopId === focusStopId;
+                const focused = item.stopId === effectiveFocusStopId;
                 const active = index === activeStopIndex;
                 const isPast = index <= activeStopIndex;
                 const absoluteTime =

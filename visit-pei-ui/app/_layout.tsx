@@ -4,6 +4,7 @@ import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 
 import '../global.css';
 import { COLOR } from '../styles';
+import { FontScaleProvider, LocaleProvider } from '../src/i18n';
 import { queryClient } from '../src/services/query/queryClient';
 
 const paperTheme = {
@@ -22,22 +23,26 @@ const paperTheme = {
 const RootLayout = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <PaperProvider theme={paperTheme}>
-        <Stack>
-          <Stack.Screen
-            name='index'
-            options={{
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name='(tabs)'
-            options={{
-              headerShown: false,
-            }}
-          />
-        </Stack>
-      </PaperProvider>
+      <LocaleProvider>
+        <FontScaleProvider>
+          <PaperProvider theme={paperTheme}>
+            <Stack>
+              <Stack.Screen
+                name='index'
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name='(tabs)'
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name='settings/index'
+                options={{ headerShown: false }}
+              />
+            </Stack>
+          </PaperProvider>
+        </FontScaleProvider>
+      </LocaleProvider>
     </QueryClientProvider>
   );
 };

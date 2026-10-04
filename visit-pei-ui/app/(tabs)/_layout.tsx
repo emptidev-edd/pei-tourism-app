@@ -3,40 +3,38 @@ import { CommonActions } from '@react-navigation/native';
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-const TAB_ICON_SIZE = 24;
-const BRAND_GREEN   = '#007960';
+import { useLocale } from '../../src/i18n';
+
+const TAB_ICON_SIZE  = 24;
+const ACTIVE_COLOR   = '#007960';
 const INACTIVE_COLOR = 'rgba(52, 64, 83, 0.45)';
 
 const TabsLayout = () => {
+  const { t } = useLocale();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
       }}
       tabBar={({ navigation, state, descriptors, insets }) => {
-        const bottomOffset = Math.max(insets.bottom - 10, 6);
-        const bottomPadding = Math.min(Math.max(insets.bottom - 20, 2), 8);
+        const bottomOffset = Math.max(insets.bottom, 20);
 
         return (
           <View style={[styles.tabBarShell, { bottom: bottomOffset }]}>
-            <View style={[styles.tabBar, { paddingBottom: bottomPadding }]}>
+            <View style={styles.tabBar}>
               {state.routes.map((route, index) => {
                 const focused = state.index === index;
                 const { options } = descriptors[route.key];
-                const label =
-                  typeof options.tabBarLabel === 'string'
-                    ? options.tabBarLabel
-                    : typeof options.title === 'string'
-                      ? options.title
-                      : route.name;
-                const color = focused ? BRAND_GREEN : INACTIVE_COLOR;
+                const color = focused ? ACTIVE_COLOR : INACTIVE_COLOR;
+                const label = typeof options.title === 'string' ? options.title : route.name;
 
                 return (
                   <Pressable
                     key={route.key}
                     accessibilityRole='button'
+                    accessibilityLabel={label}
                     accessibilityState={focused ? { selected: true } : {}}
-                    style={[styles.tabPressable, focused && styles.tabPressableActive]}
+                    style={styles.tabPressable}
                     onPress={() => {
                       const event = navigation.emit({
                         type: 'tabPress',
@@ -60,9 +58,9 @@ const TabsLayout = () => {
                   >
                     <View style={[styles.tabInner, focused && styles.tabInnerActive]}>
                       {options.tabBarIcon?.({ focused, color, size: TAB_ICON_SIZE })}
-                      {focused && (
-                        <Text style={styles.tabLabel} numberOfLines={1}>{label}</Text>
-                      )}
+                      <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
+                        {label}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -75,7 +73,7 @@ const TabsLayout = () => {
       <Tabs.Screen
         name='home'
         options={{
-          title: 'Home',
+          title: t('tabs.home'),
           tabBarIcon: ({ color, focused, size }) => (
             <MaterialCommunityIcons
               name={focused ? 'home-variant' : 'home-variant-outline'}
@@ -88,7 +86,7 @@ const TabsLayout = () => {
       <Tabs.Screen
         name='discover'
         options={{
-          title: 'Discover',
+          title: t('tabs.discover'),
           tabBarIcon: ({ color, focused, size }) => (
             <MaterialCommunityIcons
               name={focused ? 'map-search' : 'map-search-outline'}
@@ -99,9 +97,22 @@ const TabsLayout = () => {
         }}
       />
       <Tabs.Screen
+        name='plan'
+        options={{
+          title: t('tabs.plan'),
+          tabBarIcon: ({ color, focused, size }) => (
+            <MaterialCommunityIcons
+              name={focused ? 'auto-fix' : 'auto-fix'}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name='events'
         options={{
-          title: 'Events',
+          title: t('tabs.events'),
           tabBarIcon: ({ color, focused, size }) => (
             <MaterialCommunityIcons
               name={focused ? 'calendar-star' : 'calendar-star-outline'}
@@ -114,23 +125,10 @@ const TabsLayout = () => {
       <Tabs.Screen
         name='transit'
         options={{
-          title: 'Transit',
+          title: t('tabs.transit'),
           tabBarIcon: ({ color, focused, size }) => (
             <MaterialCommunityIcons
               name={focused ? 'bus' : 'bus-stop'}
-              color={color}
-              size={size}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name='trip-planner'
-        options={{
-          title: 'Planner',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons
-              name='map-marker-path'
               color={color}
               size={size}
             />
@@ -150,46 +148,38 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingTop: 8,
+    paddingHorizontal: 4,
+    paddingTop: 6,
+    paddingBottom: 6,
     borderRadius: 28,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
-    // iOS shadow
     shadowColor: '#000000',
     shadowOpacity: 0.12,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
-    // Android shadow
     elevation: 12,
   },
   tabPressable: {
     flex: 1,
   },
-  tabPressableActive: {
-    flex: 1.8,
-  },
   tabInner: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
     marginHorizontal: 2,
     borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    minHeight: 56,
+    paddingHorizontal: 6,
+    paddingVertical: 7,
+    minHeight: 52,
   },
   tabInnerActive: {
     backgroundColor: '#e6f2ef',
-    paddingHorizontal: 16,
   },
   tabLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#007960',
-    letterSpacing: 0.1,
-    lineHeight: 14,
+    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 

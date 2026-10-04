@@ -1,0 +1,158 @@
+{
+  "tabs": {
+    "home": "Accueil",
+    "discover": "Découvrir",
+    "plan": "Planifier",
+    "events": "Événements",
+    "transit": "Transport"
+  },
+  "common": {
+    "retry": "Réessayer",
+    "done": "Terminé",
+    "loading": "Chargement…",
+    "viewDetails": "Voir les détails",
+    "directions": "Itinéraire",
+    "phone": "Téléphone",
+    "website": "Site Web",
+    "share": "Partager",
+    "save": "Enregistrer",
+    "shuffle": "Mélanger",
+    "settings": "Paramètres",
+    "back": "Retour"
+  },
+  "home": {
+    "location": "Île-du-Prince-Édouard",
+    "greeting": "Bonjour,",
+    "title": "Explorateur",
+    "subtitle": "Découvrez la beauté de la province jardin du Canada",
+    "discoverTitle": "Découvrir l'Î.-P.-É.",
+    "discoverLink": "En vedette",
+    "eventsTitle": "Événements à venir",
+    "eventsLink": "En direct",
+    "moods": {
+      "beaches": "Plages",
+      "food": "Restauration",
+      "trails": "Sentiers côtiers",
+      "events": "Événements",
+      "stays": "Hébergements",
+      "family": "Famille"
+    },
+    "states": {
+      "featuredUnavailable": "Lieux en vedette indisponibles",
+      "noFeatured": "Aucun lieu en vedette pour l'instant",
+      "noFeaturedBody": "Lorsque des lieux en vedette seront disponibles, ils apparaîtront ici automatiquement.",
+      "eventsUnavailable": "Événements indisponibles",
+      "noEvents": "Aucun événement à venir trouvé",
+      "noEventsBody": "Le flux d'événements est connecté. Les nouveaux événements apparaîtront dès qu'ils seront disponibles."
+    },
+    "weather": {
+      "in": "à Charlottetown",
+      "summer": "Parfait pour la plage",
+      "fall": "Brise côtière fraîche",
+      "winter": "Couvrez-vous bien",
+      "spring": "Air marin printanier",
+      "conditions": {
+        "clear": "Ciel dégagé",
+        "partlyCloudy": "Partiellement nuageux",
+        "cloudy": "Nuageux",
+        "fog": "Brouillard",
+        "drizzle": "Bruine légère",
+        "rain": "Pluvieux",
+        "snow": "Neigeux",
+        "showers": "Averses",
+        "snowShowers": "Averses de neige",
+        "thunderstorm": "Orages"
+      }
+    },
+    "today": {
+      "title": "Aujourd'hui à l'Î.-P.-É.",
+      "subtitle": "À ne pas manquer",
+      "happeningToday": "Aujourd'hui",
+      "happeningTomorrow": "Demain",
+      "thisWeek": "Cette semaine",
+      "viewEvent": "Voir l'événement"
+    }
+  },
+  "plan": {
+    "kicker": "Planifiez votre journée",
+    "title": "Votre journée à l'Î.-P.-É.",
+    "subtitle": "Dites-nous ce que vous aimez — nous bâtirons une journée près de {{location}}.",
+    "yourLocation": "votre position",
+    "defaultLocation": "Charlottetown (par défaut)",
+    "pickerTitle": "Qu'est-ce qui vous intéresse?",
+    "pickerSubtitle": "Choisissez-en autant que vous voulez (ou aucun pour une journée équilibrée)",
+    "interests": {
+      "nature": "Nature",
+      "food": "Restauration",
+      "history": "Histoire",
+      "culture": "Culture",
+      "outdoor": "Plein air"
+    },
+    "build": "Bâtir ma journée",
+    "rebuild": "Reconstruire le plan",
+    "yourDay": "Votre journée",
+    "anythingGoes": "Tout est permis",
+    "shuffle": "Mélanger",
+    "saveTrip": "Enregistrer ce voyage",
+    "intro": {
+      "title": "Des plans intelligents bâtis sur les données de l'Î.-P.-É.",
+      "body": "Nous utilisons vos intérêts et votre position pour choisir une activité matinale, un dîner, une attraction d'après-midi et une sortie en soirée — le tout à une distance raisonnable."
+    },
+    "slots": {
+      "morningActivity": "Activité matinale",
+      "lunch": "Dîner",
+      "afternoonExplore": "Exploration d'après-midi",
+      "evening": "Soirée"
+    },
+    "noMatch": "Aucun résultat à proximité — essayez un rayon plus large ou d'autres intérêts.",
+    "kmAway": "à {{km}} km",
+    "savedTitle": "Voyage enregistré",
+    "savedBody": "Vous le retrouverez plus tard dans Voyages enregistrés.",
+    "saveError": "Impossible d'enregistrer",
+    "saveErrorBody": "Veuillez réessayer dans un instant.",
+    "errorTitle": "Impossible de bâtir votre plan",
+    "errorBody": "Veuillez réessayer."
+  },
+  "visitorCentres": {
+    "title": "Centres d'accueil",
+    "subtitle": "Aide, cartes et conseils locaux",
+    "openLabel": "Info visiteurs",
+    "count": {
+      "one": "{{count}} centre",
+      "other": "{{count}} centres"
+    },
+    "across": "{{count}} centres à travers l'Î.-P.-É.",
+    "groupBy": "Par communauté",
+    "noCommunity": "Autres emplacements",
+    "details": {
+      "hours": "Heures d'ouverture",
+      "season": "Saison",
+      "phone": "Appeler",
+      "email": "Courriel",
+      "website": "Site Web",
+      "directions": "Itinéraire"
+    },
+    "empty": "Aucun centre d'accueil disponible pour le moment.",
+    "errorTitle": "Impossible de charger les centres d'accueil",
+    "errorBody": "Veuillez réessayer dans un instant.",
+    "detailErrorTitle": "Centre d'accueil indisponible"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "language": {
+      "section": "Langue",
+      "en": "English",
+      "fr": "Français"
+    },
+    "fontScale": {
+      "section": "Taille du texte",
+      "small": "Petite",
+      "default": "Par défaut",
+      "large": "Grande"
+    },
+    "about": {
+      "section": "À propos",
+      "version": "Version"
+    }
+  }
+}

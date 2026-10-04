@@ -1,0 +1,158 @@
+{
+  "tabs": {
+    "home": "Home",
+    "discover": "Discover",
+    "plan": "Plan",
+    "events": "Events",
+    "transit": "Transit"
+  },
+  "common": {
+    "retry": "Retry",
+    "done": "Done",
+    "loading": "Loading...",
+    "viewDetails": "View details",
+    "directions": "Directions",
+    "phone": "Phone",
+    "website": "Website",
+    "share": "Share",
+    "save": "Save",
+    "shuffle": "Shuffle",
+    "settings": "Settings",
+    "back": "Back"
+  },
+  "home": {
+    "location": "Prince Edward Island",
+    "greeting": "Hello,",
+    "title": "Explorer",
+    "subtitle": "Discover the beauty of Canada's Garden Province",
+    "discoverTitle": "Discover PEI",
+    "discoverLink": "Featured",
+    "eventsTitle": "Upcoming Events",
+    "eventsLink": "Live",
+    "moods": {
+      "beaches": "Beaches",
+      "food": "Food & Drink",
+      "trails": "Coastal Trails",
+      "events": "Events",
+      "stays": "Stays",
+      "family": "Family Fun"
+    },
+    "states": {
+      "featuredUnavailable": "Featured places unavailable",
+      "noFeatured": "No featured places yet",
+      "noFeaturedBody": "When the backend has featured places, they will appear here automatically.",
+      "eventsUnavailable": "Events unavailable",
+      "noEvents": "No upcoming events found",
+      "noEventsBody": "The live events feed is connected. New events will show here as soon as they are available."
+    },
+    "weather": {
+      "in": "in Charlottetown",
+      "summer": "Perfect beach day",
+      "fall": "Crisp coastal weather",
+      "winter": "Bundle up warm",
+      "spring": "Fresh ocean breeze",
+      "conditions": {
+        "clear": "Clear skies",
+        "partlyCloudy": "Partly cloudy",
+        "cloudy": "Cloudy",
+        "fog": "Foggy",
+        "drizzle": "Light drizzle",
+        "rain": "Rainy",
+        "snow": "Snowy",
+        "showers": "Rain showers",
+        "snowShowers": "Snow showers",
+        "thunderstorm": "Thunderstorms"
+      }
+    },
+    "today": {
+      "title": "Today on PEI",
+      "subtitle": "Don't miss this",
+      "happeningToday": "Happening today",
+      "happeningTomorrow": "Tomorrow",
+      "thisWeek": "This week",
+      "viewEvent": "View event"
+    }
+  },
+  "plan": {
+    "kicker": "Plan your day",
+    "title": "Your PEI Day",
+    "subtitle": "Tell us what you like — we'll build a day for you near {{location}}.",
+    "yourLocation": "your location",
+    "defaultLocation": "Charlottetown (default)",
+    "pickerTitle": "What are you into?",
+    "pickerSubtitle": "Pick any (or none for a balanced day)",
+    "interests": {
+      "nature": "Nature",
+      "food": "Food",
+      "history": "History",
+      "culture": "Culture",
+      "outdoor": "Outdoor"
+    },
+    "build": "Build my day",
+    "rebuild": "Rebuild plan",
+    "yourDay": "Your day",
+    "anythingGoes": "Anything goes",
+    "shuffle": "Shuffle",
+    "saveTrip": "Save this trip",
+    "intro": {
+      "title": "Smart day plans, built on PEI data",
+      "body": "We use your interests and location to pick a morning activity, lunch spot, afternoon attraction and evening place — all within a comfortable radius."
+    },
+    "slots": {
+      "morningActivity": "Morning Activity",
+      "lunch": "Lunch",
+      "afternoonExplore": "Afternoon Explore",
+      "evening": "Evening"
+    },
+    "noMatch": "No match within range — try a wider radius or different interests.",
+    "kmAway": "{{km}} km away",
+    "savedTitle": "Trip saved",
+    "savedBody": "Find it under Saved trips later.",
+    "saveError": "Could not save",
+    "saveErrorBody": "Please try again in a moment.",
+    "errorTitle": "Could not build your plan",
+    "errorBody": "Please try again."
+  },
+  "visitorCentres": {
+    "title": "Visitor Centres",
+    "subtitle": "Get help, maps, and local tips",
+    "openLabel": "Visitor Info",
+    "count": {
+      "one": "{{count}} centre",
+      "other": "{{count}} centres"
+    },
+    "across": "{{count}} centres across PEI",
+    "groupBy": "By community",
+    "noCommunity": "Other locations",
+    "details": {
+      "hours": "Hours",
+      "season": "Season",
+      "phone": "Call",
+      "email": "Email",
+      "website": "Website",
+      "directions": "Directions"
+    },
+    "empty": "No visitor centres available right now.",
+    "errorTitle": "Could not load visitor centres",
+    "errorBody": "Please try again in a moment.",
+    "detailErrorTitle": "Visitor centre unavailable"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "section": "Language",
+      "en": "English",
+      "fr": "Français"
+    },
+    "fontScale": {
+      "section": "Font size",
+      "small": "Small",
+      "default": "Default",
+      "large": "Large"
+    },
+    "about": {
+      "section": "About",
+      "version": "Version"
+    }
+  }
+}

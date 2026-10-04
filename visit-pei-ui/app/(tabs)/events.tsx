@@ -16,40 +16,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../styles';
 import { useEventsQuery } from '../../src/services/query/events/useEventsQuery';
-import type { TourismEvent } from '../../src/types/api';
+import type { TickitUpEvent } from '../../src/types/api';
+import {
+  formatEventPrice,
+  getEventCity,
+  getEventImageUrl,
+  getEventLocation,
+} from '../../src/utils/eventDisplay';
 
 const PAGE_LIMIT = 20;
 
 type DateFilterId = 'all' | 'today' | 'week' | 'month';
-type CategoryId =
-  | 'all'
-  | 'tourism-pei'
-  | 'charlottetown'
-  | 'eastlink'
-  | 'summerside'
-  | 'exhibitions'
-  | 'province';
 
 const DATE_FILTERS: { id: DateFilterId; label: string }[] = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'Upcoming' },
   { id: 'today', label: 'Today' },
   { id: 'week', label: 'This Week' },
   { id: 'month', label: 'This Month' },
-];
-
-const CATEGORY_TABS: {
-  id: CategoryId;
-  label: string;
-  sources: string[];
-  community?: string;
-}[] = [
-  { id: 'all', label: 'All Events', sources: [] },
-  { id: 'tourism-pei', label: 'Tourism PEI', sources: ['TOURISM_PEI_SCRAPE'] },
-  { id: 'charlottetown', label: 'Charlottetown', sources: [], community: 'Charlottetown' },
-  { id: 'eastlink', label: 'Eastlink Centre', sources: ['EASTLINK_CENTRE'] },
-  { id: 'summerside', label: 'Summerside', sources: [], community: 'Summerside' },
-  { id: 'exhibitions', label: 'Exhibitions', sources: ['PEI_EXHIBITIONS'] },
-  { id: 'province', label: 'Province', sources: ['GOV_PEI_EVENTS'] },
 ];
 
 const formatLocalDate = (date: Date) => {
@@ -100,19 +83,15 @@ const formatEventHeaderDate = (value: string) =>
     weekday: 'long',
   }).format(new Date(value));
 
-const formatEventTime = (event: TourismEvent) => {
-  const start = new Date(event.startAt);
+const formatEventTime = (event: TickitUpEvent) => {
+  const start = new Date(event.startDate);
   const timeFormatter = new Intl.DateTimeFormat('en-CA', {
     hour: 'numeric',
     minute: '2-digit',
   });
 
-  if (event.allDay) {
-    return 'All day';
-  }
-
-  if (event.endAt) {
-    return `${timeFormatter.format(start)} - ${timeFormatter.format(new Date(event.endAt))}`;
+  if (event.endDate) {
+    return `${timeFormatter.format(start)} - ${timeFormatter.format(new Date(event.endDate))}`;
   }
 
   return timeFormatter.format(start);
@@ -124,13 +103,11 @@ const formatEventDayBadge = (value: string) =>
     month: 'short',
   }).format(new Date(value));
 
-const getEventLocation = (event: TourismEvent) =>
-  event.venueName?.trim() ||
-  event.community?.trim() ||
-  event.address?.trim() ||
-  'Prince Edward Island';
+const getEventSummary = (event: TickitUpEvent) => {
+  if (event.shortSummary?.trim()) {
+    return event.shortSummary.trim();
+  }
 
-const getEventSummary = (event: TourismEvent) => {
   if (event.description?.trim()) {
     return event.description.trim();
   }
@@ -138,11 +115,11 @@ const getEventSummary = (event: TourismEvent) => {
   return `${event.title} is an upcoming PEI event happening at ${getEventLocation(event)}.`;
 };
 
-const groupEventsByDate = (items: TourismEvent[]) => {
-  const sections: { date: string; items: TourismEvent[] }[] = [];
+const groupEventsByDate = (items: TickitUpEvent[]) => {
+  const sections: { date: string; items: TickitUpEvent[] }[] = [];
 
   for (const item of items) {
-    const dateKey = item.startAt.slice(0, 10);
+    const dateKey = item.startDate.slice(0, 10);
     const existing = sections.find((section) => section.date === dateKey);
 
     if (existing) {
@@ -199,21 +176,21 @@ const EventStateCard = ({
   </Surface>
 );
 
-const EventCard = ({ event }: { event: TourismEvent }) => (
+const EventCard = ({ event }: { event: TickitUpEvent }) => (
   <TouchableOpacity
     activeOpacity={0.88}
     onPress={() =>
       router.push({
         pathname: '/events/[id]',
-        params: { id: event.id },
+        params: { id: event.slug },
       })
     }
   >
     <Surface style={styles.eventCard} elevation={0}>
       <View style={styles.eventImageWrap}>
-        {event.imageUrl ? (
+        {getEventImageUrl(event) ? (
           <Image
-            source={{ uri: event.imageUrl }}
+            source={{ uri: getEventImageUrl(event) ?? undefined }}
             contentFit='cover'
             transition={150}
             style={styles.eventImage}
@@ -230,7 +207,7 @@ const EventCard = ({ event }: { event: TourismEvent }) => (
 
         <View style={styles.eventDateBadge}>
           <Text style={styles.eventDateBadgeText}>
-            {formatEventDayBadge(event.startAt)}
+            {formatEventDayBadge(event.startDate)}
           </Text>
         </View>
       </View>
@@ -245,10 +222,17 @@ const EventCard = ({ event }: { event: TourismEvent }) => (
             />
             <Text style={styles.eventMetaPillText}>{formatEventTime(event)}</Text>
           </View>
-          {event.community?.trim() ? (
+          {getEventCity(event) ? (
             <View style={styles.eventMetaPillMuted}>
               <Text style={styles.eventMetaPillMutedText}>
-                {event.community.trim()}
+                {getEventCity(event)}
+              </Text>
+            </View>
+          ) : null}
+          {formatEventPrice(event) ? (
+            <View style={styles.eventMetaPillMuted}>
+              <Text style={styles.eventMetaPillMutedText}>
+                {formatEventPrice(event)}
               </Text>
             </View>
           ) : null}
@@ -291,36 +275,30 @@ export default function EventsTab() {
   const [searchText, setSearchText] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] =
     useState<DateFilterId>('week');
-  const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [page, setPage] = useState(1);
 
   const deferredSearchText = useDeferredValue(searchText.trim());
   const dateRange = getDateRange(selectedDateFilter);
-  const activeTab = CATEGORY_TABS.find((t) => t.id === selectedCategory);
-  const activeSources = activeTab?.sources ?? [];
-  const activeCommunity = activeTab?.community;
 
   useEffect(() => {
     setPage(1);
-  }, [selectedDateFilter, selectedCategory, deferredSearchText]);
+  }, [selectedDateFilter, deferredSearchText]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, [page]);
 
   const eventsQuery = useEventsQuery({
-    from: dateRange.from,
-    to: dateRange.to,
-    q: deferredSearchText.length > 0 ? deferredSearchText : undefined,
-    sources: activeSources.length > 0 ? activeSources : undefined,
-    community: activeCommunity,
+    dateFrom: dateRange.from,
+    dateTo: dateRange.to,
+    search: deferredSearchText.length > 0 ? deferredSearchText : undefined,
     limit: PAGE_LIMIT,
     page,
   });
 
   const total = eventsQuery.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_LIMIT));
-  const items = eventsQuery.data?.items ?? [];
+  const totalPages = eventsQuery.data?.totalPages ?? Math.max(1, Math.ceil(total / PAGE_LIMIT));
+  const items = eventsQuery.data?.data ?? [];
   const sections = groupEventsByDate(items);
 
   return (
@@ -354,36 +332,6 @@ export default function EventsTab() {
 
           <View style={styles.searchShell}>
             <Surface style={styles.searchCard} elevation={0}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filterRow}
-              >
-                {CATEGORY_TABS.map((tab) => {
-                  const selected = tab.id === selectedCategory;
-                  return (
-                    <TouchableOpacity
-                      key={tab.id}
-                      activeOpacity={0.82}
-                      onPress={() => setSelectedCategory(tab.id)}
-                      style={[
-                        styles.categoryChip,
-                        selected && styles.categoryChipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.categoryChipText,
-                          selected && styles.categoryChipTextActive,
-                        ]}
-                      >
-                        {tab.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
               <Searchbar
                 placeholder='Search events or venues'
                 onChangeText={setSearchText}
@@ -467,8 +415,8 @@ export default function EventsTab() {
             !eventsQuery.isError &&
             sections.length === 0 ? (
               <EventStateCard
-                title='No events found'
-                description='Try another search or switch the date filter to see more PEI events.'
+                title='No published events yet'
+                description='TickitUp events will show here when organisers publish them. Try another search or date filter.'
                 icon='calendar-blank-outline'
               />
             ) : null}
@@ -487,7 +435,7 @@ export default function EventsTab() {
 
                     <View style={styles.dayCardList}>
                       {section.items.map((event) => (
-                        <EventCard key={event.id} event={event} />
+                        <EventCard key={event.slug} event={event} />
                       ))}
                     </View>
                   </View>

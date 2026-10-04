@@ -1,49 +1,61 @@
 import { apiRequest } from '../http/apiClient';
-import type { EventDetailResponse, EventsListResponse } from '../../types/api';
-
-type GetUpcomingEventsOptions = {
-  from: string;
-  limit?: number;
-};
+import type {
+  EventCategory,
+  EventsListResponse,
+  TickitUpEvent,
+  ValidatePromoResponse,
+} from '../../types/api';
 
 export type GetEventsOptions = {
-  from?: string;
-  to?: string;
-  q?: string;
-  community?: string;
-  sources?: string[];
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  categorySlug?: string;
   limit?: number;
   page?: number;
 };
 
-export const getUpcomingEvents = async ({
-  from,
-  limit = 3,
-}: GetUpcomingEventsOptions) =>
-  apiRequest<EventsListResponse>('/events', {
-    params: { from, limit },
-  });
-
 export const getEvents = async ({
-  community,
-  from,
+  categorySlug,
+  dateFrom,
+  dateTo,
   limit = 20,
   page = 1,
-  q,
-  sources,
-  to,
-}: GetEventsOptions) =>
+  search,
+}: GetEventsOptions = {}) =>
   apiRequest<EventsListResponse>('/events', {
     params: {
-      community,
-      from,
+      categorySlug,
+      dateFrom,
+      dateTo,
       limit,
       page,
-      q,
-      sources: sources && sources.length > 0 ? sources.join(',') : undefined,
-      to,
+      search,
     },
   });
 
-export const getEvent = async (id: string) =>
-  apiRequest<EventDetailResponse>(`/events/${id}`);
+export const getUpcomingEvents = async ({
+  dateFrom,
+  limit = 3,
+}: {
+  dateFrom: string;
+  limit?: number;
+}) =>
+  getEvents({
+    dateFrom,
+    limit,
+    page: 1,
+  });
+
+export const getEvent = async (slug: string) =>
+  apiRequest<TickitUpEvent>(`/events/${slug}`);
+
+export const getEventCategories = async () =>
+  apiRequest<EventCategory[]>('/categories');
+
+export const validatePromoCode = async (eventId: string, code: string) =>
+  apiRequest<ValidatePromoResponse>(`/events/${eventId}/promo-codes/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });

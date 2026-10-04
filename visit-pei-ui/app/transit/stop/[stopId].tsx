@@ -18,34 +18,16 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { COLOR } from '../../../styles';
 import { useTransitStopArrivalsQuery } from '../../../src/services/query/transit/useTransitStopArrivalsQuery';
 import { useTransitStopScheduleQuery } from '../../../src/services/query/transit/useTransitStopScheduleQuery';
+import {
+  toFavoriteStop,
+  useFavoriteStops,
+} from '../../../src/utils/favoriteStops';
+import {
+  formatClockTime,
+  formatNextTimesLine,
+  getCountdownParts,
+} from '../../../src/utils/transitTime';
 import type { TransitArrival, TransitServedRoute } from '../../../src/types/api';
-
-const formatClockTime = (departureAtIso: string) =>
-  new Intl.DateTimeFormat('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(departureAtIso));
-
-const formatCountdownLabel = (departureAtIso: string, now: number) => {
-  const diffMs = new Date(departureAtIso).getTime() - now;
-  if (diffMs <= 60 * 1000 && diffMs >= -60 * 1000) {
-    return 'Now';
-  }
-
-  if (diffMs < -60 * 1000) {
-    return 'Passed';
-  }
-
-  const totalMinutes = Math.ceil(diffMs / 60000);
-  if (totalMinutes >= 120) {
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
-  }
-
-  return `${totalMinutes} min`;
-};
 
 const getRouteNumber = (arrival: TransitArrival) =>
   arrival.routeShortName?.trim() ||
@@ -106,6 +88,7 @@ export default function StopDetailsScreen() {
     { feedId, stopId: stopId ?? '' },
     showFullSchedule && Boolean(stopId),
   );
+  const { isFavorite, toggleFavorite } = useFavoriteStops();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -247,6 +230,23 @@ export default function StopDetailsScreen() {
                 />
                 <Text style={styles.primaryActionText}>Open in Maps</Text>
               </TouchableOpacity>
+
+              {stop ? (
+                <TouchableOpacity
+                  activeOpacity={0.84}
+                  onPress={() => toggleFavorite(toFavoriteStop(stop))}
+                  style={styles.primaryAction}
+                >
+                  <MaterialCommunityIcons
+                    name={isFavorite(stop.stopId) ? 'star' : 'star-outline'}
+                    size={18}
+                    color={COLOR.brandGreen}
+                  />
+                  <Text style={styles.primaryActionText}>
+                    {isFavorite(stop.stopId) ? 'Saved' : 'Favorite'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             {(stopQuery.data?.servedRoutes?.length ?? 0) > 0 ? (
@@ -313,12 +313,28 @@ export default function StopDetailsScreen() {
                         size={14}
                         color={COLOR.brandGreen}
                       />
-                      <Text style={styles.countdownPrimaryText}>
-                        {formatCountdownLabel(first.departureAtIso, now)}
-                      </Text>
+                      {(() => {
+                        const { unit, value } = getCountdownParts(
+                          first.departureAtIso,
+                          now,
+                        );
+
+                        return (
+                          <View style={styles.countdownValueRow}>
+                            <Text style={styles.countdownValueText}>
+                              {value}
+                            </Text>
+                            {unit ? (
+                              <Text style={styles.countdownUnitText}>
+                                {unit}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })()}
                     </View>
                     <Text style={styles.countdownText}>
-                      {items.slice(1, 3).map((item) => formatClockTime(item.departureAtIso)).join(', ') ||
+                      {formatNextTimesLine(items, now) ??
                         formatClockTime(first.departureAtIso)}
                     </Text>
                   </View>
@@ -446,6 +462,7 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
+    gap: 10,
   },
   primaryAction: {
     minHeight: 50,
@@ -540,21 +557,33 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   countdownPill: {
-    minWidth: 64,
+    minWidth: 78,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 4,
+    borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 6,
     backgroundColor: '#efefef',
     gap: 6,
   },
-  countdownPrimaryText: {
+  countdownValueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  countdownValueText: {
     color: '#16202a',
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: '800',
-    lineHeight: 18,
+    lineHeight: 24,
+  },
+  countdownUnitText: {
+    color: '#6b7e8d',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+    paddingBottom: 2,
   },
   countdownText: {
     color: '#6b7e8d',

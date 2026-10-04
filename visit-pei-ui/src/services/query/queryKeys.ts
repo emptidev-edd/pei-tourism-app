@@ -2,20 +2,19 @@ export const queryKeys = {
   home: {
     featuredPlaces: (limit: number) =>
       ['home', 'featuredPlaces', limit] as const,
-    upcomingEvents: (from: string, limit: number) =>
-      ['home', 'upcomingEvents', from, limit] as const,
+    upcomingEvents: (dateFrom: string, limit: number) =>
+      ['home', 'upcomingEvents', dateFrom, limit] as const,
   },
   events: {
     list: (params: {
-      community?: string;
-      from?: string;
+      categorySlug?: string;
+      dateFrom?: string;
+      dateTo?: string;
       limit?: number;
       page?: number;
-      q?: string;
-      sources?: string[];
-      to?: string;
+      search?: string;
     }) => ['events', 'list', params] as const,
-    detail: (id: string) => ['events', 'detail', id] as const,
+    detail: (slug: string) => ['events', 'detail', slug] as const,
   },
   transit: {
     nearbyStops: (params: {
@@ -38,5 +37,25 @@ export const queryKeys = {
   },
   places: {
     detail: (id: string) => ['places', 'detail', id] as const,
+    list: (params: { category?: string; near?: string; radiusKm?: number }) =>
+      ['places', 'list', params] as const,
+  },
+  visitorCentres: {
+    list: () => ['visitorCentres', 'list'] as const,
+    detail: (id: string) => ['visitorCentres', 'detail', id] as const,
+  },
+  weather: {
+    forecast: (params: { lat?: number; lng?: number }) =>
+      ['weather', 'forecast', params] as const,
+  },
+  trip: {
+    dayPlan: (params: {
+      lat: number;
+      lng: number;
+      radius?: number;
+      interests?: string[];
+      shuffle?: boolean;
+      shuffleSeed?: number;
+    }) => ['trip', 'dayPlan', params] as const,
   },
 };

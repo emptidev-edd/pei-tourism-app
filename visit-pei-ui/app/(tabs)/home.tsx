@@ -2,7 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import type { ComponentProps } from 'react';
+import { useMemo, type ComponentProps } from 'react';
 import {
   Dimensions,
   Platform,
@@ -16,25 +16,18 @@ import { Surface } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../styles';
+import { pickLocalized, useLocale, type Locale } from '../../src/i18n';
 import { useFeaturedPlacesQuery } from '../../src/services/query/home/useFeaturedPlacesQuery';
 import { useUpcomingEventsQuery } from '../../src/services/query/home/useUpcomingEventsQuery';
-import type { Place, PlaceCategory, TourismEvent } from '../../src/types/api';
+import { useWeatherQuery } from '../../src/services/query/weather/useWeatherQuery';
+import type { Place, TickitUpEvent } from '../../src/types/api';
+import {
+  getEventImageUrl,
+  getEventLocation,
+} from '../../src/utils/eventDisplay';
+import { getPlaceTheme } from '../../src/utils/placeVisuals';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
-
-type CategoryTile = {
-  icon: IconName;
-  id: string;
-  label: string;
-};
-
-type VisualTheme = {
-  accentColor: string;
-  backgroundColor: string;
-  icon: IconName;
-  imageUrl: string;
-  label: string;
-};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_CARD_WIDTH = (SCREEN_WIDTH - 40 - 12) / 2;
@@ -42,108 +35,16 @@ const MOOD_CARD_WIDTH = SCREEN_WIDTH - 40;
 const MOOD_ITEM_WIDTH = Math.floor(MOOD_CARD_WIDTH / 3);
 const MOOD_LABEL_WIDTH = MOOD_ITEM_WIDTH - 20;
 
-const categories: CategoryTile[] = [
-  { id: 'beaches', label: 'Beaches', icon: 'wave' },
-  { id: 'food', label: 'Food & Drink', icon: 'silverware-fork-knife' },
-  { id: 'trails', label: 'Coastal Trails', icon: 'map-marker-path' },
-  { id: 'events', label: 'Events', icon: 'calendar-star' },
-  { id: 'stays', label: 'Stays', icon: 'bed-queen-outline' },
-  { id: 'family', label: 'Family Fun', icon: 'ferris-wheel' },
+type MoodCategoryId = 'beaches' | 'food' | 'trails' | 'events' | 'stays' | 'family';
+
+const categories: Array<{ id: MoodCategoryId; icon: IconName }> = [
+  { id: 'beaches', icon: 'wave' },
+  { id: 'food',    icon: 'silverware-fork-knife' },
+  { id: 'trails',  icon: 'map-marker-path' },
+  { id: 'events',  icon: 'calendar-star' },
+  { id: 'stays',   icon: 'bed-queen-outline' },
+  { id: 'family',  icon: 'ferris-wheel' },
 ];
-
-const PLACE_VISUALS: Record<PlaceCategory, VisualTheme> = {
-  VISITOR_CENTRE: {
-    label: 'Visitor Info',
-    icon: 'information-outline',
-    backgroundColor: '#daf4ee',
-    accentColor: '#0f8a73',
-    imageUrl:
-      'https://images.unsplash.com/photo-1517760444937-f6397edcbbcd?auto=format&fit=crop&w=1200&q=80',
-  },
-  ATTRACTION: {
-    label: 'Attraction',
-    icon: 'compass-outline',
-    backgroundColor: '#e8f0ff',
-    accentColor: '#3267b8',
-    imageUrl:
-      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
-  },
-  BEACH: {
-    label: 'Beach',
-    icon: 'wave',
-    backgroundColor: '#dff3ff',
-    accentColor: '#1982b8',
-    imageUrl:
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
-  },
-  PARK: {
-    label: 'Park',
-    icon: 'tree-outline',
-    backgroundColor: '#e3f5d6',
-    accentColor: '#4c8f2f',
-    imageUrl:
-      'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1200&q=80',
-  },
-  TRAIL: {
-    label: 'Trail',
-    icon: 'map-marker-path',
-    backgroundColor: '#e6f2ef',
-    accentColor: '#007960',
-    imageUrl:
-      'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=80',
-  },
-  LIGHTHOUSE: {
-    label: 'Lighthouse',
-    icon: 'lighthouse',
-    backgroundColor: '#fff3cf',
-    accentColor: '#d98500',
-    imageUrl:
-      'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=1200&q=80',
-  },
-  MUSEUM: {
-    label: 'Museum',
-    icon: 'bank-outline',
-    backgroundColor: '#efe8ff',
-    accentColor: '#6f47c8',
-    imageUrl:
-      'https://images.unsplash.com/photo-1518998053901-5348d3961a04?auto=format&fit=crop&w=1200&q=80',
-  },
-  HISTORIC: {
-    label: 'Historic',
-    icon: 'castle',
-    backgroundColor: '#f7e9dc',
-    accentColor: '#9d5b2a',
-    imageUrl:
-      'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1200&q=80',
-  },
-  FOOD_DRINK: {
-    label: 'Food & Drink',
-    icon: 'silverware-fork-knife',
-    backgroundColor: '#ffe7d9',
-    accentColor: '#c75d1d',
-    imageUrl:
-      'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=1200&q=80',
-  },
-  TRANSPORT: {
-    label: 'Transport',
-    icon: 'bus',
-    backgroundColor: '#e8eef8',
-    accentColor: '#486a9f',
-    imageUrl:
-      'https://images.unsplash.com/photo-1474487548417-781cb71495f3?auto=format&fit=crop&w=1200&q=80',
-  },
-  OTHER: {
-    label: 'Explore',
-    icon: 'map-search-outline',
-    backgroundColor: '#edf1f6',
-    accentColor: '#5f738c',
-    imageUrl:
-      'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80',
-  },
-};
-
-const getPlaceTheme = (category: PlaceCategory) =>
-  PLACE_VISUALS[category] ?? PLACE_VISUALS.OTHER;
 
 const getPlaceSubtitle = (place: Place) => {
   if (place.community?.trim()) return place.community.trim();
@@ -151,15 +52,54 @@ const getPlaceSubtitle = (place: Place) => {
   return 'Featured on PEI';
 };
 
-const formatEventMeta = (event: TourismEvent) => {
-  const date = new Date(event.startAt);
+type WeatherDisplay = {
+  icon: IconName;
+  tempC: number;
+  labelKey: string;
+};
+
+// Seasonal fallback shown while the forecast loads or if the API is unreachable.
+const getFallbackWeather = (now: Date): WeatherDisplay => {
+  const month = now.getMonth();
+  if (month >= 5 && month <= 8) return { icon: 'weather-sunny', tempC: 22, labelKey: 'summer' };
+  if (month >= 9 && month <= 10) return { icon: 'weather-partly-cloudy', tempC: 14, labelKey: 'fall' };
+  if (month >= 11 || month <= 1) return { icon: 'weather-snowy', tempC: -4, labelKey: 'winter' };
+  return { icon: 'weather-windy', tempC: 9, labelKey: 'spring' };
+};
+
+// WMO weather codes (Open-Meteo) → icon + i18n condition key.
+const describeWeatherCode = (code: number, isDay: boolean): { icon: IconName; conditionKey: string } => {
+  if (code === 0) return { icon: isDay ? 'weather-sunny' : 'weather-night', conditionKey: 'clear' };
+  if (code <= 2) return { icon: isDay ? 'weather-partly-cloudy' : 'weather-night-partly-cloudy', conditionKey: 'partlyCloudy' };
+  if (code === 3) return { icon: 'weather-cloudy', conditionKey: 'cloudy' };
+  if (code === 45 || code === 48) return { icon: 'weather-fog', conditionKey: 'fog' };
+  if (code >= 51 && code <= 57) return { icon: 'weather-rainy', conditionKey: 'drizzle' };
+  if (code >= 61 && code <= 67) return { icon: 'weather-pouring', conditionKey: 'rain' };
+  if (code >= 71 && code <= 77) return { icon: 'weather-snowy', conditionKey: 'snow' };
+  if (code >= 80 && code <= 82) return { icon: 'weather-rainy', conditionKey: 'showers' };
+  if (code >= 85 && code <= 86) return { icon: 'weather-snowy-heavy', conditionKey: 'snowShowers' };
+  if (code >= 95) return { icon: 'weather-lightning-rainy', conditionKey: 'thunderstorm' };
+  return { icon: 'weather-partly-cloudy', conditionKey: 'cloudy' };
+};
+
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const daysBetween = (a: Date, b: Date) => {
+  const aStart = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const bStart = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.round((bStart - aStart) / 86_400_000);
+};
+
+const formatEventMeta = (event: TickitUpEvent) => {
+  const date = new Date(event.startDate);
   const dateText = new Intl.DateTimeFormat('en-CA', {
     month: 'short',
     day: 'numeric',
     weekday: 'short',
   }).format(date);
-
-  if (event.allDay) return `${dateText} · All day`;
 
   const timeText = new Intl.DateTimeFormat('en-CA', {
     hour: 'numeric',
@@ -169,15 +109,116 @@ const formatEventMeta = (event: TourismEvent) => {
   return `${dateText} · ${timeText}`;
 };
 
-const getEventLocation = (event: TourismEvent) =>
-  event.venueName?.trim() || event.community?.trim() || 'Prince Edward Island';
-
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
 
   return 'Unable to load this section right now.';
+};
+
+const WeatherChip = ({
+  weather,
+  inLabel,
+  vibeLabel,
+}: {
+  weather: Pick<WeatherDisplay, 'icon' | 'tempC'>;
+  inLabel: string;
+  vibeLabel: string;
+}) => (
+  <View
+    style={styles.weatherChip}
+    accessibilityRole='summary'
+    accessibilityLabel={`${weather.tempC}°C, ${vibeLabel}, ${inLabel}`}
+  >
+    <MaterialCommunityIcons name={weather.icon} size={16} color={COLOR.whiteText} />
+    <Text style={styles.weatherTemp}>{weather.tempC}°C</Text>
+    <Text style={styles.weatherDivider}>·</Text>
+    <Text style={styles.weatherVibe} numberOfLines={1}>{vibeLabel}</Text>
+    <Text style={styles.weatherDivider}>·</Text>
+    <Text style={styles.weatherIn} numberOfLines={1}>{inLabel}</Text>
+  </View>
+);
+
+const TodayHero = ({
+  event,
+  locale,
+  badgeLabel,
+  ctaLabel,
+  title,
+  subtitle,
+  onPress,
+}: {
+  event: TickitUpEvent;
+  locale: Locale;
+  badgeLabel: string;
+  ctaLabel: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) => {
+  const displayTitle = event.title;
+  const venue = getEventLocation(event);
+  const start = new Date(event.startDate);
+  const time = new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(start);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      onPress={onPress}
+      accessibilityRole='button'
+      accessibilityLabel={`${title}: ${displayTitle}`}
+    >
+      <Surface style={styles.todayCard} elevation={0}>
+        {getEventImageUrl(event) ? (
+          <Image
+            source={{ uri: getEventImageUrl(event) ?? undefined }}
+            contentFit='cover'
+            transition={180}
+            style={styles.todayImage}
+          />
+        ) : (
+          <View style={[styles.todayImage, styles.todayImageFallback]}>
+            <MaterialCommunityIcons name='calendar-star' size={40} color={COLOR.brandGreen} />
+          </View>
+        )}
+        <View style={styles.todayOverlay} />
+
+        <View style={styles.todayTopRow}>
+          <View style={styles.todayBadge}>
+            <View style={styles.todayPulseDot} />
+            <Text style={styles.todayBadgeText}>{badgeLabel}</Text>
+          </View>
+          <View style={styles.todayKickerPill}>
+            <Text style={styles.todayKickerText}>{title}</Text>
+          </View>
+        </View>
+
+        <View style={styles.todayCopy}>
+          <Text style={styles.todaySubtitle}>{subtitle}</Text>
+          <Text style={styles.todayEventTitle} numberOfLines={2}>{displayTitle}</Text>
+          <View style={styles.todayMetaRow}>
+            <MaterialCommunityIcons name='map-marker-outline' size={13} color='rgba(255,255,255,0.92)' />
+            <Text style={styles.todayMetaText} numberOfLines={1}>{venue}</Text>
+            {time ? (
+              <>
+                <View style={styles.todayMetaDot} />
+                <MaterialCommunityIcons name='clock-outline' size={13} color='rgba(255,255,255,0.92)' />
+                <Text style={styles.todayMetaText}>{time}</Text>
+              </>
+            ) : null}
+          </View>
+          <View style={styles.todayCta}>
+            <Text style={styles.todayCtaText}>{ctaLabel}</Text>
+            <MaterialCommunityIcons name='arrow-right' size={14} color={COLOR.brandGreen} />
+          </View>
+        </View>
+      </Surface>
+    </TouchableOpacity>
+  );
 };
 
 const HomeSectionStateCard = ({
@@ -216,11 +257,16 @@ const HomeSectionStateCard = ({
 const DiscoverCard = ({
   onPress,
   place,
+  locale,
 }: {
   onPress: () => void;
   place: Place;
+  locale: Locale;
 }) => {
   const theme = getPlaceTheme(place.category);
+  const displayName = pickLocalized(place.name, place.nameFr, locale);
+  const localizedDescription = pickLocalized(place.description, place.descriptionFr, locale);
+  const subtitle = place.community?.trim() || localizedDescription || getPlaceSubtitle(place);
 
   return (
     <TouchableOpacity
@@ -230,7 +276,7 @@ const DiscoverCard = ({
     >
       <Surface style={styles.gridCard} elevation={0}>
         <View
-          style={[styles.gridMedia, { backgroundColor: theme.backgroundColor }]}
+          style={[styles.gridMedia, { backgroundColor: theme.softColor }]}
         >
           <Image
             source={{ uri: place.imageUrl ?? theme.imageUrl }}
@@ -270,10 +316,10 @@ const DiscoverCard = ({
         </View>
         <View style={styles.gridBody}>
           <Text style={styles.gridTitle} numberOfLines={1}>
-            {place.name}
+            {displayName}
           </Text>
           <Text style={styles.gridDescription} numberOfLines={2}>
-            {getPlaceSubtitle(place)}
+            {subtitle}
           </Text>
         </View>
       </Surface>
@@ -298,11 +344,14 @@ const DiscoverCardSkeleton = ({ index }: { index: number }) => (
 const EventCard = ({
   event,
   onPress,
+  locale,
 }: {
-  event: TourismEvent;
+  event: TickitUpEvent;
   onPress: () => void;
+  locale: Locale;
 }) => {
-  const hasImage = Boolean(event.imageUrl);
+  const hasImage = Boolean(getEventImageUrl(event));
+  const displayTitle = event.title;
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
@@ -311,7 +360,7 @@ const EventCard = ({
 
         {hasImage ? (
           <Image
-            source={{ uri: event.imageUrl ?? undefined }}
+            source={{ uri: getEventImageUrl(event) ?? undefined }}
             contentFit='cover'
             transition={150}
             style={styles.eventImage}
@@ -328,7 +377,7 @@ const EventCard = ({
 
         <View style={styles.planCopy}>
           <Text style={styles.planTitle} numberOfLines={1}>
-            {event.title}
+            {displayTitle}
           </Text>
           <Text style={styles.planSubtitle} numberOfLines={1}>
             {formatEventMeta(event)}
@@ -370,7 +419,17 @@ const EventCardSkeleton = ({ index }: { index: number }) => (
   </Surface>
 );
 
+const handleMoodPress = (id: string) => {
+  if (id === 'trails') return router.push({ pathname: '/(tabs)/discover', params: { category: 'TRAIL' } });
+  if (id === 'events') return router.push('/(tabs)/events');
+  if (id === 'beaches') return router.push({ pathname: '/(tabs)/discover', params: { category: 'BEACH' } });
+  if (id === 'food') return router.push('/food');
+  if (id === 'stays') return router.push('/stays');
+  if (id === 'family') return router.push('/family');
+};
+
 export default function HomeTab() {
+  const { t, locale } = useLocale();
   const topRow = categories.slice(0, 3);
   const bottomRow = categories.slice(3, 6);
 
@@ -378,7 +437,29 @@ export default function HomeTab() {
   const upcomingEventsQuery = useUpcomingEventsQuery();
 
   const featuredPlaces = featuredPlacesQuery.data?.items ?? [];
-  const upcomingEvents = upcomingEventsQuery.data?.items ?? [];
+  const upcomingEvents = upcomingEventsQuery.data?.data ?? [];
+
+  const now = useMemo(() => new Date(), []);
+  const weatherQuery = useWeatherQuery();
+  const weather = useMemo<WeatherDisplay>(() => {
+    const current = weatherQuery.data?.current;
+    if (current) {
+      const { icon, conditionKey } = describeWeatherCode(current.weatherCode, current.isDay);
+      return { icon, tempC: current.tempC, labelKey: `conditions.${conditionKey}` };
+    }
+    return getFallbackWeather(now);
+  }, [weatherQuery.data, now]);
+
+  const heroEvent = upcomingEvents[0] ?? null;
+  const heroBadgeKey: 'happeningToday' | 'happeningTomorrow' | 'thisWeek' | null = useMemo(() => {
+    if (!heroEvent) return null;
+    const start = new Date(heroEvent.startDate);
+    if (isSameDay(start, now)) return 'happeningToday';
+    const days = daysBetween(now, start);
+    if (days === 1) return 'happeningTomorrow';
+    if (days >= 2 && days <= 7) return 'thisWeek';
+    return null;
+  }, [heroEvent, now]);
 
   return (
     <>
@@ -391,20 +472,54 @@ export default function HomeTab() {
           contentContainerStyle={styles.contentContainer}
         >
           <View style={styles.header}>
-            <View style={styles.headerLocationRow}>
-              <MaterialCommunityIcons
-                name='map-marker-outline'
-                size={16}
-                color='rgba(255,255,255,0.8)'
-              />
-              <Text style={styles.headerLocation}>Prince Edward Island</Text>
+            <View style={styles.headerTopRow}>
+              <View style={styles.headerLocationRow}>
+                <MaterialCommunityIcons
+                  name='map-marker-outline'
+                  size={16}
+                  color='rgba(255,255,255,0.8)'
+                />
+                <Text style={styles.headerLocation}>{t('home.location')}</Text>
+              </View>
+              <View style={styles.headerActions}>
+                <TouchableOpacity
+                  onPress={() => router.push('/visitor-centres' as never)}
+                  accessibilityRole='button'
+                  accessibilityLabel={t('visitorCentres.openLabel')}
+                  activeOpacity={0.7}
+                  style={styles.settingsBtn}
+                >
+                  <MaterialCommunityIcons
+                    name='information-outline'
+                    size={22}
+                    color='rgba(255,255,255,0.92)'
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push('/settings' as never)}
+                  accessibilityRole='button'
+                  accessibilityLabel={t('common.settings')}
+                  activeOpacity={0.7}
+                  style={styles.settingsBtn}
+                >
+                  <MaterialCommunityIcons
+                    name='cog-outline'
+                    size={22}
+                    color='rgba(255,255,255,0.92)'
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
 
-            <Text style={styles.headerGreeting}>Hello,</Text>
-            <Text style={styles.headerTitle}>Explorer</Text>
-            <Text style={styles.headerSub}>
-              Discover the beauty of Canada&apos;s Garden Province
-            </Text>
+            <Text style={styles.headerGreeting}>{t('home.greeting')}</Text>
+            <Text style={styles.headerTitle}>{t('home.title')}</Text>
+            <Text style={styles.headerSub}>{t('home.subtitle')}</Text>
+
+            <WeatherChip
+              weather={weather}
+              inLabel={t('home.weather.in')}
+              vibeLabel={t(`home.weather.${weather.labelKey}`)}
+            />
           </View>
 
           <View style={styles.moodWrapper}>
@@ -414,6 +529,7 @@ export default function HomeTab() {
                   <TouchableOpacity
                     key={cat.id}
                     activeOpacity={0.7}
+                    onPress={() => handleMoodPress(cat.id)}
                     style={[
                       styles.moodItem,
                       index < topRow.length - 1 && styles.moodBorderRight,
@@ -426,7 +542,7 @@ export default function HomeTab() {
                         color={COLOR.brandGreen}
                       />
                       <Text style={styles.moodLabel} numberOfLines={2}>
-                        {cat.label}
+                        {t(`home.moods.${cat.id}`)}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -440,6 +556,7 @@ export default function HomeTab() {
                   <TouchableOpacity
                     key={cat.id}
                     activeOpacity={0.7}
+                    onPress={() => handleMoodPress(cat.id)}
                     style={[
                       styles.moodItem,
                       index < bottomRow.length - 1 && styles.moodBorderRight,
@@ -452,7 +569,7 @@ export default function HomeTab() {
                         color={COLOR.brandGreen}
                       />
                       <Text style={styles.moodLabel} numberOfLines={2}>
-                        {cat.label}
+                        {t(`home.moods.${cat.id}`)}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -461,10 +578,29 @@ export default function HomeTab() {
             </Surface>
           </View>
 
+          {heroEvent && heroBadgeKey ? (
+            <View style={styles.todaySection}>
+              <TodayHero
+                event={heroEvent}
+                locale={locale}
+                badgeLabel={t(`home.today.${heroBadgeKey}`)}
+                title={t('home.today.title')}
+                subtitle={t('home.today.subtitle')}
+                ctaLabel={t('home.today.viewEvent')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/events/[id]',
+                    params: { id: heroEvent.slug },
+                  })
+                }
+              />
+            </View>
+          ) : null}
+
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Discover PEI</Text>
-              <Text style={styles.sectionLink}>Featured</Text>
+              <Text style={styles.sectionTitle}>{t('home.discoverTitle')}</Text>
+              <Text style={styles.sectionLink}>{t('home.discoverLink')}</Text>
             </View>
 
             {featuredPlacesQuery.isPending ? (
@@ -477,10 +613,10 @@ export default function HomeTab() {
 
             {!featuredPlacesQuery.isPending && featuredPlacesQuery.isError ? (
               <HomeSectionStateCard
-                title='Featured places unavailable'
+                title={t('home.states.featuredUnavailable')}
                 description={getErrorMessage(featuredPlacesQuery.error)}
                 icon='map-search-outline'
-                actionLabel='Retry'
+                actionLabel={t('common.retry')}
                 onPress={() => featuredPlacesQuery.refetch()}
               />
             ) : null}
@@ -489,8 +625,8 @@ export default function HomeTab() {
             !featuredPlacesQuery.isError &&
             featuredPlaces.length === 0 ? (
               <HomeSectionStateCard
-                title='No featured places yet'
-                description='When the backend has featured places, they will appear here automatically.'
+                title={t('home.states.noFeatured')}
+                description={t('home.states.noFeaturedBody')}
                 icon='compass-outline'
               />
             ) : null}
@@ -503,6 +639,7 @@ export default function HomeTab() {
                   <DiscoverCard
                     key={place.id}
                     place={place}
+                    locale={locale}
                     onPress={() =>
                       router.push({
                         pathname: '/places/[id]',
@@ -517,8 +654,8 @@ export default function HomeTab() {
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Upcoming Events</Text>
-              <Text style={styles.sectionLink}>Live</Text>
+              <Text style={styles.sectionTitle}>{t('home.eventsTitle')}</Text>
+              <Text style={styles.sectionLink}>{t('home.eventsLink')}</Text>
             </View>
 
             {upcomingEventsQuery.isPending ? (
@@ -531,10 +668,10 @@ export default function HomeTab() {
 
             {!upcomingEventsQuery.isPending && upcomingEventsQuery.isError ? (
               <HomeSectionStateCard
-                title='Events unavailable'
+                title={t('home.states.eventsUnavailable')}
                 description={getErrorMessage(upcomingEventsQuery.error)}
                 icon='calendar-alert'
-                actionLabel='Retry'
+                actionLabel={t('common.retry')}
                 onPress={() => upcomingEventsQuery.refetch()}
               />
             ) : null}
@@ -543,8 +680,8 @@ export default function HomeTab() {
             !upcomingEventsQuery.isError &&
             upcomingEvents.length === 0 ? (
               <HomeSectionStateCard
-                title='No upcoming events found'
-                description='The live events feed is connected. New events will show here as soon as they are available.'
+                title={t('home.states.noEvents')}
+                description={t('home.states.noEventsBody')}
                 icon='calendar-blank-outline'
               />
             ) : null}
@@ -557,10 +694,11 @@ export default function HomeTab() {
                   <EventCard
                     key={event.id}
                     event={event}
+                    locale={locale}
                     onPress={() =>
                       router.push({
                         pathname: '/events/[id]',
-                        params: { id: event.id },
+                        params: { id: event.slug },
                       })
                     }
                   />
@@ -606,11 +744,29 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 40,
     gap: 4,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   headerLocationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginBottom: 10,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   headerLocation: {
     color: 'rgba(255,255,255,0.8)',
@@ -628,6 +784,154 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '800',
     lineHeight: 40,
+  },
+  weatherChip: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  weatherTemp: {
+    color: COLOR.whiteText,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  weatherDivider: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  weatherVibe: {
+    color: COLOR.whiteText,
+    fontSize: 12,
+    fontWeight: '700',
+    maxWidth: 130,
+  },
+  weatherIn: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '600',
+    maxWidth: 120,
+  },
+  todaySection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  todayCard: {
+    width: '100%',
+    minHeight: 220,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: COLOR.brandGreen,
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  todayImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  todayImageFallback: {
+    backgroundColor: COLOR.lightGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(7, 36, 28, 0.55)',
+  },
+  todayTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  todayBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  todayPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ff6b6b',
+  },
+  todayBadgeText: {
+    color: COLOR.whiteText,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  todayKickerPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+  },
+  todayKickerText: {
+    color: COLOR.whiteText,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  todayCopy: {
+    gap: 4,
+  },
+  todaySubtitle: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  todayEventTitle: {
+    color: COLOR.whiteText,
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 28,
+  },
+  todayMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  todayMetaText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 12,
+    fontWeight: '600',
+    maxWidth: 120,
+  },
+  todayMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    marginHorizontal: 4,
+  },
+  todayCta: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: COLOR.whiteText,
+  },
+  todayCtaText: {
+    color: COLOR.brandGreen,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   headerSub: {
     color: 'rgba(255,255,255,0.72)',

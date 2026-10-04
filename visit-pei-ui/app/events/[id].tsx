@@ -19,51 +19,52 @@ import {
 
 import { COLOR } from '../../styles';
 import { useEventQuery } from '../../src/services/query/events/useEventQuery';
-import type { TourismEvent } from '../../src/types/api';
+import type { TickitUpEvent } from '../../src/types/api';
+import {
+  formatEventPrice,
+  getEventImageUrl,
+  getEventLocation,
+} from '../../src/utils/eventDisplay';
 
-const formatEventDate = (event: TourismEvent) => {
-  const start = new Date(event.startAt);
+const formatEventDate = (event: TickitUpEvent) => {
+  const start = new Date(event.startDate);
   const dateText = new Intl.DateTimeFormat('en-CA', {
     day: 'numeric',
     month: 'long',
     weekday: 'long',
   }).format(start);
 
-  if (event.allDay) {
-    return `${dateText} · All day`;
-  }
-
   const timeFormatter = new Intl.DateTimeFormat('en-CA', {
     hour: 'numeric',
     minute: '2-digit',
   });
 
-  if (event.endAt) {
-    return `${dateText} · ${timeFormatter.format(start)} - ${timeFormatter.format(new Date(event.endAt))}`;
+  if (event.endDate) {
+    return `${dateText} · ${timeFormatter.format(start)} - ${timeFormatter.format(new Date(event.endDate))}`;
   }
 
   return `${dateText} · ${timeFormatter.format(start)}`;
 };
 
-const getLocationLabel = (event: TourismEvent) =>
+const getVenueLabel = (event: TickitUpEvent) =>
   event.venueName?.trim() ||
-  event.community?.trim() ||
-  event.address?.trim() ||
+  event.city?.name?.trim() ||
   'Prince Edward Island';
 
-const getVenueLabel = (event: TourismEvent) =>
-  event.venueName?.trim() || event.community?.trim() || 'Prince Edward Island';
+const getEventSummary = (event: TickitUpEvent) => {
+  if (event.shortSummary?.trim()) {
+    return event.shortSummary.trim();
+  }
 
-const getEventSummary = (event: TourismEvent) => {
   if (event.description?.trim()) {
     return event.description.trim();
   }
 
-  return `${event.title} is an upcoming event happening in ${getLocationLabel(event)}.`;
+  return `${event.title} is an upcoming event happening in ${getEventLocation(event)}.`;
 };
 
-const openDirections = async (event: TourismEvent) => {
-  if (event.lat == null || event.lng == null) {
+const openDirections = async (event: TickitUpEvent) => {
+  if (event.latitude == null || event.longitude == null) {
     return;
   }
 
@@ -71,8 +72,8 @@ const openDirections = async (event: TourismEvent) => {
     event.venueName?.trim() || event.title || 'Prince Edward Island',
   );
   const url = Platform.select({
-    ios: `maps://maps.apple.com/?q=${query}&ll=${event.lat},${event.lng}`,
-    default: `https://www.google.com/maps/search/?api=1&query=${query}@${event.lat},${event.lng}`,
+    ios: `maps://maps.apple.com/?q=${query}&ll=${event.latitude},${event.longitude}`,
+    default: `https://www.google.com/maps/search/?api=1&query=${query}@${event.latitude},${event.longitude}`,
   });
 
   if (url) {
@@ -86,14 +87,6 @@ const openWebsite = async (website: string | null) => {
   }
 
   await Linking.openURL(website);
-};
-
-const openPhone = async (phone: string | null) => {
-  if (!phone) {
-    return;
-  }
-
-  await Linking.openURL(`tel:${phone.replace(/\s+/g, '')}`);
 };
 
 const cardShadow = Platform.select({
@@ -153,7 +146,7 @@ export default function EventDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const eventQuery = useEventQuery(id ?? '');
 
-  const event = eventQuery.data?.event;
+  const event = eventQuery.data;
   const eventDateText = event ? formatEventDate(event) : null;
   const venueLabel = event ? getVenueLabel(event) : null;
   const locationLabel = event ? getLocationLabel(event) : null;
@@ -220,9 +213,9 @@ export default function EventDetailsScreen() {
             contentContainerStyle={styles.contentContainer}
           >
             <View style={styles.heroWrap}>
-              {event.imageUrl ? (
+              {getEventImageUrl(event) ? (
                 <Image
-                  source={{ uri: event.imageUrl }}
+                  source={{ uri: getEventImageUrl(event) ?? undefined }}
                   contentFit='cover'
                   transition={150}
                   style={styles.heroImage}
@@ -292,45 +285,53 @@ export default function EventDetailsScreen() {
                     value={venueLabel ?? ''}
                   />
 
-                  {event.address?.trim() ? (
+                  {event.venueAddress?.trim() ? (
                     <DetailInfoRow
                       icon='map-marker-radius-outline'
                       label='Address'
-                      value={event.address.trim()}
+                      value={event.venueAddress.trim()}
                     />
                   ) : null}
 
-                  {event.contactPhone?.trim() ? (
+                  {formatEventPrice(event) ? (
                     <DetailInfoRow
-                      icon='phone-outline'
-                      label='Phone'
-                      value={event.contactPhone.trim()}
+                      icon='ticket-outline'
+                      label='Tickets'
+                      value={formatEventPrice(event) ?? ''}
+                    />
+                  ) : null}
+
+                  {event.organiser?.organisationName?.trim() ? (
+                    <DetailInfoRow
+                      icon='account-group-outline'
+                      label='Organiser'
+                      value={event.organiser.organisationName.trim()}
+                    />
+                  ) : null}
+
+                  {event.organiser?.contactEmail?.trim() ? (
+                    <DetailInfoRow
+                      icon='email-outline'
+                      label='Email'
+                      value={event.organiser.contactEmail.trim()}
                     />
                   ) : null}
                 </View>
               </View>
 
-              {event.contactPhone || event.website ? (
+              {event.organiser?.contactEmail ? (
                 <View style={styles.actionRow}>
-                  {event.contactPhone ? (
-                    <DetailAction
-                      icon='phone-outline'
-                      label='Call'
-                      onPress={() => openPhone(event.contactPhone)}
-                    />
-                  ) : null}
-
-                  {event.website ? (
-                    <DetailAction
-                      icon='web'
-                      label='Website'
-                      onPress={() => openWebsite(event.website)}
-                    />
-                  ) : null}
+                  <DetailAction
+                    icon='email-outline'
+                    label='Email'
+                    onPress={() =>
+                      openWebsite(`mailto:${event.organiser?.contactEmail}`)
+                    }
+                  />
                 </View>
               ) : null}
 
-              {event.lat != null && event.lng != null ? (
+              {event.latitude != null && event.longitude != null ? (
                 <TouchableOpacity
                   activeOpacity={0.86}
                   onPress={() => openDirections(event)}

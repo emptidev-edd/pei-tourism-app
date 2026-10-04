@@ -79,7 +79,7 @@ export const getApiBaseUrl = () => {
 
   if (!configuredBaseUrl) {
     throw new Error(
-      'Unable to determine the API server URL. Set EXPO_PUBLIC_API_BASE_URL to your Express server, for example http://192.168.x.x:4000.',
+      'Unable to determine the API server URL. Set EXPO_PUBLIC_API_BASE_URL to the TickitUp SA API, for example http://localhost:4000, http://10.0.2.2:4000 (Android emulator), or http://192.168.x.x:4000 (physical device).',
     );
   }
 

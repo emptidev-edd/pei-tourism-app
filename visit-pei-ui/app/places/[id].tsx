@@ -19,103 +19,14 @@ import {
 
 import { COLOR } from '../../styles';
 import { usePlaceQuery } from '../../src/services/query/places/usePlaceQuery';
-import type { Place, PlaceCategory } from '../../src/types/api';
+import type { Place } from '../../src/types/api';
+import {
+  NOISY_TAGS,
+  formatTagLabel,
+  getPlaceTheme,
+} from '../../src/utils/placeVisuals';
 
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
-
-type VisualTheme = {
-  accentColor: string;
-  icon: IconName;
-  label: string;
-  softColor: string;
-};
-
-const PLACE_VISUALS: Record<PlaceCategory, VisualTheme> = {
-  VISITOR_CENTRE: {
-    label: 'Visitor Info',
-    icon: 'information-outline',
-    accentColor: '#0f8a73',
-    softColor: '#daf4ee',
-  },
-  ATTRACTION: {
-    label: 'Attraction',
-    icon: 'compass-outline',
-    accentColor: '#3267b8',
-    softColor: '#e8f0ff',
-  },
-  BEACH: {
-    label: 'Beach',
-    icon: 'wave',
-    accentColor: '#1982b8',
-    softColor: '#dff3ff',
-  },
-  PARK: {
-    label: 'Park',
-    icon: 'tree-outline',
-    accentColor: '#4c8f2f',
-    softColor: '#e3f5d6',
-  },
-  TRAIL: {
-    label: 'Trail',
-    icon: 'map-marker-path',
-    accentColor: '#007960',
-    softColor: '#e6f2ef',
-  },
-  LIGHTHOUSE: {
-    label: 'Lighthouse',
-    icon: 'lighthouse',
-    accentColor: '#d98500',
-    softColor: '#fff3cf',
-  },
-  MUSEUM: {
-    label: 'Museum',
-    icon: 'bank-outline',
-    accentColor: '#6f47c8',
-    softColor: '#efe8ff',
-  },
-  HISTORIC: {
-    label: 'Historic',
-    icon: 'castle',
-    accentColor: '#9d5b2a',
-    softColor: '#f7e9dc',
-  },
-  FOOD_DRINK: {
-    label: 'Food & Drink',
-    icon: 'silverware-fork-knife',
-    accentColor: '#c75d1d',
-    softColor: '#ffe7d9',
-  },
-  TRANSPORT: {
-    label: 'Transport',
-    icon: 'bus',
-    accentColor: '#486a9f',
-    softColor: '#e8eef8',
-  },
-  OTHER: {
-    label: 'Explore',
-    icon: 'map-search-outline',
-    accentColor: '#5f738c',
-    softColor: '#edf1f6',
-  },
-};
-
-const NOISY_TAGS = new Set([
-  'open-data',
-  'open data',
-  'pei',
-  'prince edward island',
-]);
-
-const getPlaceTheme = (category: PlaceCategory) =>
-  PLACE_VISUALS[category] ?? PLACE_VISUALS.OTHER;
-
-const formatTagLabel = (value: string) =>
-  value
-    .trim()
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(' ');
 
 const getPrimaryTag = (place: Place, fallback: string) => {
   const usefulTag = place.tags.find((tag) => {

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Linking,
   PanResponder,
   Platform,
   ScrollView,
@@ -21,6 +22,18 @@ import { COLOR } from '../../styles';
 import { useNearbyTransitStopsQuery } from '../../src/services/query/transit/useNearbyTransitStopsQuery';
 import { useTransitRoutesQuery } from '../../src/services/query/transit/useTransitRoutesQuery';
 import { useTransitStopArrivalsQuery } from '../../src/services/query/transit/useTransitStopArrivalsQuery';
+import {
+  favoriteToTransitStop,
+  toFavoriteStop,
+  useFavoriteStops,
+  type FavoriteStop,
+} from '../../src/utils/favoriteStops';
+import {
+  formatClockTime,
+  formatNextTimesLine,
+  getCountdownParts,
+  getUpcomingArrivals,
+} from '../../src/utils/transitTime';
 import type { TransitArrival, TransitRoute, TransitStop } from '../../src/types/api';
 
 const DEFAULT_REGION = {
@@ -47,44 +60,6 @@ const formatWalkTime = (meters?: number) => {
   return `${minutes} min walk`;
 };
 
-const formatClockTime = (departureAtIso: string) =>
-  new Intl.DateTimeFormat('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(departureAtIso));
-
-const getUpcomingArrivals = (items: TransitArrival[], now: number) =>
-  items.filter((item) => new Date(item.departureAtIso).getTime() >= now - 60 * 1000);
-
-const formatArrivalTimes = (items: TransitArrival[]) =>
-  items
-    .slice(1, 3)
-    .map((item) => {
-      return formatClockTime(item.departureAtIso);
-    })
-    .join(', ');
-
-const formatArrivalCountdown = (departureAtIso: string, now: number) => {
-  const diffMs = new Date(departureAtIso).getTime() - now;
-  if (diffMs <= 60 * 1000 && diffMs >= -60 * 1000) {
-    return 'Now';
-  }
-
-  if (diffMs < -60 * 1000) {
-    return 'Passed';
-  }
-
-  const totalMinutes = Math.ceil(diffMs / 60000);
-  if (totalMinutes >= 120) {
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
-  }
-
-  return `${totalMinutes} min`;
-};
-
 const getRouteNumber = (arrival: TransitArrival) =>
   arrival.routeShortName?.trim() ||
   arrival.routeId.split(':').pop()?.trim() ||
@@ -94,6 +69,30 @@ const getRouteTitle = (arrival: TransitArrival) =>
   arrival.routeLongName?.trim() ||
   arrival.headsign?.trim() ||
   'Transit line';
+
+const CountdownPill = ({
+  departureAtIso,
+  now,
+}: {
+  departureAtIso: string;
+  now: number;
+}) => {
+  const { unit, value } = getCountdownParts(departureAtIso, now);
+
+  return (
+    <View style={styles.countdownPill}>
+      <MaterialCommunityIcons
+        name='clock-outline'
+        size={14}
+        color={COLOR.brandGreen}
+      />
+      <View style={styles.countdownValueRow}>
+        <Text style={styles.countdownValueText}>{value}</Text>
+        {unit ? <Text style={styles.countdownUnitText}>{unit}</Text> : null}
+      </View>
+    </View>
+  );
+};
 
 const cardShadow = Platform.select({
   ios: {
@@ -121,12 +120,14 @@ const formatServiceDays = (days: string[]): string => {
 
 export default function TransitTab() {
   const mapRef = useRef<MapView | null>(null);
+  const hasCenteredRef = useRef(false);
   const sheetAnim = useRef(new Animated.Value(COLLAPSED_SHEET)).current;
   const sheetHeightRef = useRef(COLLAPSED_SHEET);
   const dragStartHeightRef = useRef(COLLAPSED_SHEET);
   const [searchText, setSearchText] = useState('');
   const [sheetExpanded, setSheetExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'nearby' | 'coach'>('nearby');
+  const [activeTab, setActiveTab] = useState<'nearby' | 'favorites' | 'coach'>('nearby');
+  const { favorites, isFavorite, toggleFavorite } = useFavoriteStops();
   const [locationStatus, setLocationStatus] = useState<
     'loading' | 'granted' | 'fallback'
   >('loading');
@@ -137,11 +138,28 @@ export default function TransitTab() {
 
   useEffect(() => {
     let mounted = true;
+    let subscription: Location.LocationSubscription | null = null;
 
-    const loadLocation = async () => {
+    const applyPosition = (position: Location.LocationObject) => {
+      if (!mounted) return;
+      const nextRegion = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        latitudeDelta: 0.025,
+        longitudeDelta: 0.025,
+      };
+      setUserRegion(nextRegion);
+      setLocationStatus('granted');
+      if (!hasCenteredRef.current) {
+        hasCenteredRef.current = true;
+        setMapRegion(nextRegion);
+        mapRef.current?.animateToRegion(nextRegion, 500);
+      }
+    };
+
+    const startLocation = async () => {
       try {
-        const permission =
-          await Location.requestForegroundPermissionsAsync();
+        const permission = await Location.requestForegroundPermissionsAsync();
 
         if (permission.status !== 'granted') {
           if (!mounted) return;
@@ -149,35 +167,28 @@ export default function TransitTab() {
           return;
         }
 
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        // Quick start: use last known position for immediate stop results
+        const last = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000 });
+        if (last) {
+          applyPosition(last);
+        }
 
-        if (!mounted) return;
-
-        setUserRegion({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          latitudeDelta: 0.025,
-          longitudeDelta: 0.025,
-        });
-        setMapRegion({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          latitudeDelta: 0.025,
-          longitudeDelta: 0.025,
-        });
-        setLocationStatus('granted');
+        // Continuous watch: keeps updating as GPS accuracy improves or user moves
+        subscription = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 30 },
+          applyPosition,
+        );
       } catch {
         if (!mounted) return;
         setLocationStatus('fallback');
       }
     };
 
-    loadLocation();
+    startLocation();
 
     return () => {
       mounted = false;
+      subscription?.remove();
     };
   }, []);
 
@@ -237,15 +248,12 @@ export default function TransitTab() {
     },
   });
 
-  const nearbyStopsQuery = useNearbyTransitStopsQuery(
-    {
-      lat: userRegion.latitude,
-      lng: userRegion.longitude,
-      radius: DEFAULT_RADIUS,
-      limit: 18,
-    },
-    locationStatus !== 'loading',
-  );
+  const nearbyStopsQuery = useNearbyTransitStopsQuery({
+    lat: userRegion.latitude,
+    lng: userRegion.longitude,
+    radius: DEFAULT_RADIUS,
+    limit: 18,
+  });
 
   const filteredStops = useMemo(() => {
     const nearbyStops = nearbyStopsQuery.data?.items ?? [];
@@ -268,22 +276,25 @@ export default function TransitTab() {
   }, [nearbyStopsQuery.data?.items, searchText]);
 
   useEffect(() => {
-    if (filteredStops.length === 0) {
-      setSelectedStopId(null);
-      return;
-    }
-
     setSelectedStopId((current) => {
-      if (current && filteredStops.some((stop) => stop.stopId === current)) {
+      if (
+        current &&
+        (filteredStops.some((stop) => stop.stopId === current) ||
+          favorites.some((favorite) => favorite.stopId === current))
+      ) {
         return current;
       }
 
       return filteredStops[0]?.stopId ?? null;
     });
-  }, [filteredStops]);
+  }, [favorites, filteredStops]);
+
+  const selectedFavorite =
+    favorites.find((favorite) => favorite.stopId === selectedStopId) ?? null;
 
   const selectedStop =
     filteredStops.find((stop) => stop.stopId === selectedStopId) ??
+    (selectedFavorite ? favoriteToTransitStop(selectedFavorite) : null) ??
     filteredStops[0] ??
     null;
 
@@ -336,6 +347,11 @@ export default function TransitTab() {
       setMapRegion(nextRegion);
       mapRef.current?.animateToRegion(nextRegion, 350);
     }
+  };
+
+  const handleSelectFavorite = (favorite: FavoriteStop) => {
+    setActiveTab('nearby');
+    handleSelectStop(favoriteToTransitStop(favorite));
   };
 
   return (
@@ -445,6 +461,15 @@ export default function TransitTab() {
 
                 <TouchableOpacity
                   activeOpacity={0.8}
+                  onPress={() => setActiveTab('favorites')}
+                  style={[styles.tabItem, activeTab === 'favorites' && styles.tabItemActive]}
+                >
+                  <Text style={[styles.tabText, activeTab === 'favorites' && styles.tabTextActive]}>Favorites</Text>
+                  <Text style={styles.tabCount}>{activeTab === 'favorites' && favorites.length > 0 ? `${favorites.length}` : ''}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
                   onPress={() => setActiveTab('coach')}
                   style={[styles.tabItem, activeTab === 'coach' && styles.tabItemActive]}
                 >
@@ -454,20 +479,24 @@ export default function TransitTab() {
               </View>
 
               {locationStatus === 'fallback' ? (
-                <View style={styles.noticeCard}>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={() => Linking.openSettings()}
+                  style={styles.noticeCard}
+                >
                   <MaterialCommunityIcons
                     name='map-marker-alert-outline'
                     size={18}
                     color={COLOR.brandGreen}
                   />
                   <Text style={styles.noticeText}>
-                    Using downtown Charlottetown as the default area until location
-                    access is allowed.
+                    Location access is off — showing Charlottetown by default.{' '}
+                    <Text style={styles.noticeLink}>Tap to open Settings.</Text>
                   </Text>
-                </View>
+                </TouchableOpacity>
               ) : null}
 
-              {nearbyStopsQuery.isPending ? (
+              {activeTab === 'nearby' && nearbyStopsQuery.isPending ? (
                 <View style={styles.stateCard}>
                   <Text style={styles.stateTitle}>Finding nearby stops...</Text>
                   <Text style={styles.stateDescription}>
@@ -476,7 +505,7 @@ export default function TransitTab() {
                 </View>
               ) : null}
 
-              {!nearbyStopsQuery.isPending && nearbyStopsQuery.isError ? (
+              {activeTab === 'nearby' && !nearbyStopsQuery.isPending && nearbyStopsQuery.isError ? (
                 <View style={styles.stateCard}>
                   <Text style={styles.stateTitle}>Transit stops unavailable</Text>
                   <Text style={styles.stateDescription}>
@@ -515,26 +544,40 @@ export default function TransitTab() {
                         )}
                       </View>
 
-                      <TouchableOpacity
-                        activeOpacity={0.84}
-                        onPress={() =>
-                          router.push({
-                            pathname: '/transit/stop/[stopId]',
-                            params: {
-                              stopId: selectedStop.stopId,
-                              feedId: selectedStop.feedId,
-                            },
-                          })
-                        }
-                        style={styles.stationButton}
-	                      >
-	                        <MaterialCommunityIcons
-	                          name='bus-stop'
-	                          size={18}
-	                          color={COLOR.brandGreen}
-	                        />
-	                        <Text style={styles.stationButtonText}>Station</Text>
-	                      </TouchableOpacity>
+                      <View style={styles.featuredStopActions}>
+                        <TouchableOpacity
+                          activeOpacity={0.84}
+                          onPress={() => toggleFavorite(toFavoriteStop(selectedStop))}
+                          style={styles.favButton}
+                        >
+                          <MaterialCommunityIcons
+                            name={isFavorite(selectedStop.stopId) ? 'star' : 'star-outline'}
+                            size={18}
+                            color={COLOR.brandGreen}
+                          />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          activeOpacity={0.84}
+                          onPress={() =>
+                            router.push({
+                              pathname: '/transit/stop/[stopId]',
+                              params: {
+                                stopId: selectedStop.stopId,
+                                feedId: selectedStop.feedId,
+                              },
+                            })
+                          }
+                          style={styles.stationButton}
+                        >
+                          <MaterialCommunityIcons
+                            name='bus-stop'
+                            size={18}
+                            color={COLOR.brandGreen}
+                          />
+                          <Text style={styles.stationButtonText}>Station</Text>
+                        </TouchableOpacity>
+                      </View>
 	                    </View>
 
 	                    <View style={styles.arrivalsList}>
@@ -581,23 +624,18 @@ export default function TransitTab() {
 	                          </View>
 
 	                          <View style={styles.arrivalAside}>
-	                            <View style={styles.countdownPill}>
-	                              <MaterialCommunityIcons
-	                                name='clock-outline'
-	                                size={14}
-	                                color={COLOR.brandGreen}
-	                              />
-	                              <Text style={styles.countdownPrimaryText}>
-	                                {formatArrivalCountdown(arrival.departureAtIso, now)}
-	                              </Text>
-	                            </View>
+	                            <CountdownPill
+	                              departureAtIso={arrival.departureAtIso}
+	                              now={now}
+	                            />
 	                            <Text style={styles.countdownPillText}>
-	                              {formatArrivalTimes(
+	                              {formatNextTimesLine(
 	                                getUpcomingArrivals(
 	                                  arrivals.filter((item) => item.routeId === arrival.routeId),
 	                                  now,
 	                                ),
-	                              ) || formatClockTime(arrival.departureAtIso)}
+	                                now,
+	                              ) ?? formatClockTime(arrival.departureAtIso)}
 	                            </Text>
 	                          </View>
 	                        </TouchableOpacity>
@@ -665,6 +703,62 @@ export default function TransitTab() {
                   </View>
                 </ScrollView>
                 ) : null
+              ) : null}
+
+              {activeTab === 'favorites' ? (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.sheetContent}
+                >
+                  {favorites.length === 0 ? (
+                    <View style={styles.stateCard}>
+                      <Text style={styles.stateTitle}>No favorite stops yet</Text>
+                      <Text style={styles.stateDescription}>
+                        Tap the star on a stop to save it here for quick access.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.nearbyList}>
+                      {favorites.map((favorite) => (
+                        <TouchableOpacity
+                          key={favorite.stopId}
+                          activeOpacity={0.84}
+                          onPress={() => handleSelectFavorite(favorite)}
+                          style={styles.stopRow}
+                        >
+                          <View style={styles.stopIconWrap}>
+                            <MaterialCommunityIcons
+                              name='bus-stop'
+                              size={18}
+                              color={COLOR.brandGreen}
+                            />
+                          </View>
+
+                          <View style={styles.stopCopy}>
+                            <Text style={styles.stopName} numberOfLines={2}>
+                              {favorite.name ?? favorite.stopId}
+                            </Text>
+                            <Text style={styles.stopMeta} numberOfLines={1}>
+                              {favorite.code ? `Stop ${favorite.code}` : favorite.stopId}
+                            </Text>
+                          </View>
+
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            hitSlop={8}
+                            onPress={() => toggleFavorite(favorite)}
+                          >
+                            <MaterialCommunityIcons
+                              name='star'
+                              size={20}
+                              color={COLOR.brandGreen}
+                            />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
               ) : null}
 
               {activeTab === 'coach' ? (
@@ -899,6 +993,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  noticeLink: {
+    color: COLOR.brandGreen,
+    fontWeight: '700',
+  },
   stateCard: {
     borderRadius: 20,
     paddingHorizontal: 16,
@@ -946,10 +1044,23 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   featuredStopRoutes: {
-    color: '#6b7e8d',
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '600',
+    color: '#16202a',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  featuredStopActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  favButton: {
+    width: 34,
+    height: 32,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#efefef',
   },
   stationButton: {
     flexDirection: 'row',
@@ -1025,20 +1136,33 @@ const styles = StyleSheet.create({
     minWidth: 88,
   },
   countdownPill: {
-    minWidth: 64,
+    minWidth: 78,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 4,
+    justifyContent: 'center',
+    borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 6,
     backgroundColor: '#efefef',
     gap: 6,
   },
-  countdownPrimaryText: {
+  countdownValueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  countdownValueText: {
     color: '#16202a',
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: '800',
-    lineHeight: 18,
+    lineHeight: 24,
+  },
+  countdownUnitText: {
+    color: '#6b7e8d',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+    paddingBottom: 2,
   },
   countdownPillText: {
     color: '#6b7e8d',

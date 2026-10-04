@@ -11,11 +11,11 @@ const formatLocalDate = (date: Date) => {
 };
 
 export const useUpcomingEventsQuery = (limit = 3) => {
-  const from = formatLocalDate(new Date());
+  const dateFrom = formatLocalDate(new Date());
 
   return useQuery({
-    queryKey: queryKeys.home.upcomingEvents(from, limit),
-    queryFn: () => getUpcomingEvents({ from, limit }),
+    queryKey: queryKeys.home.upcomingEvents(dateFrom, limit),
+    queryFn: () => getUpcomingEvents({ dateFrom, limit }),
     staleTime: 5 * 60 * 1000,
   });
 };
