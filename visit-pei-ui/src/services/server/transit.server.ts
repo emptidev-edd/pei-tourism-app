@@ -1,10 +1,12 @@
 import { apiRequest } from '../http/apiClient';
 import type {
   NearbyTransitStopsResponse,
+  TransitRouteDeparturesResponse,
   TransitRoutesResponse,
   TransitRouteStopsResponse,
   TransitStopArrivalsResponse,
   TransitStopScheduleResponse,
+  TransitRouteShapeResponse,
 } from '../../types/api';
 
 export type GetNearbyTransitStopsOptions = {
@@ -26,6 +28,20 @@ export type GetTransitRouteStopsOptions = {
   routeId: string;
   tripId?: string;
   directionId?: number;
+};
+
+export type GetTransitRouteShapeOptions = {
+  feedId?: string;
+  routeId: string;
+  directionId?: number;
+};
+
+export type GetTransitRouteDeparturesOptions = {
+  feedId?: string;
+  routeId: string;
+  directionId?: number;
+  stopId?: string;
+  days?: number;
 };
 
 export type GetTransitRoutesOptions = {
@@ -79,6 +95,35 @@ export const getTransitRouteStops = async ({
       directionId,
     },
   });
+
+export const getTransitRouteDepartures = async ({
+  feedId,
+  routeId,
+  directionId,
+  stopId,
+  days = 7,
+}: GetTransitRouteDeparturesOptions) =>
+  apiRequest<TransitRouteDeparturesResponse>(
+    `/transit/routes/${encodeURIComponent(routeId)}/departures`,
+    {
+      params: {
+        feedId,
+        directionId,
+        stopId,
+        days,
+      },
+    },
+  );
+
+export const getTransitRouteShape = async ({
+  feedId,
+  routeId,
+  directionId,
+}: GetTransitRouteShapeOptions) =>
+  apiRequest<TransitRouteShapeResponse>(
+    `/transit/routes/${encodeURIComponent(routeId)}/shape`,
+    { params: { feedId, directionId } },
+  );
 
 export const getTransitRoutes = async ({ feedId }: GetTransitRoutesOptions) =>
   apiRequest<TransitRoutesResponse>('/transit/routes', { params: { feedId } });

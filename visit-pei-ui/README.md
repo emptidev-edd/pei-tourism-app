@@ -25,6 +25,16 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Maps on Android
+
+iOS uses Apple Maps, including in Expo Go. Android uses Google Maps, and Expo Go does not render that map.
+
+1. In Google Cloud, create a key with **Maps SDK for Android** enabled.
+2. Add it to `.env` as `GOOGLE_MAPS_ANDROID_API_KEY`. Do not commit the key.
+3. Rebuild the native app with `npx expo run:android`, or ship an EAS build.
+
+Until that rebuild, the Android map stays blank. Expo Go on Android will stay blank even with the key.
+
 ## Get a fresh project
 
 When you're ready, run:

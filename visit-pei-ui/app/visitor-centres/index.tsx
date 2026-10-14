@@ -105,7 +105,7 @@ export default function VisitorCentresScreen() {
 
   return (
     <>
-      <StatusBar style='light' backgroundColor={COLOR.brandGreen} />
+      <StatusBar style='light' />
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>

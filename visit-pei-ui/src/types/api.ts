@@ -112,6 +112,7 @@ export type TickitUpEvent = {
   shortSummary?: string | null;
   status: EventStatus;
   isFeatured: boolean;
+  isOnline: boolean;
   venueName?: string | null;
   venueAddress?: string | null;
   cityId?: string | null;
@@ -146,6 +147,9 @@ export type EventCategory = {
   name: string;
   slug: string;
   isActive: boolean;
+  sortOrder: number;
+  description?: string | null;
+  icon?: string | null;
   _count?: { events: number };
 };
 
@@ -299,6 +303,7 @@ export type TransitRouteStop = {
   stopSequence: number;
   arrivalTime: string | null;
   departureTime: string | null;
+  connectingRoutes?: string[];
   stop: {
     id: string;
     name: string | null;
@@ -310,12 +315,14 @@ export type TransitRouteStop = {
 
 export type TransitRouteStopsResponse = {
   ok: boolean;
-  route: {
-    routeId: string;
-    shortName: string | null;
-    longName: string | null;
-    desc: string | null;
-  } | null;
+  route:
+    | ({
+        routeId: string;
+        shortName: string | null;
+        longName: string | null;
+        desc: string | null;
+      } & TransitRouteColors)
+    | null;
   trip: {
     tripId: string;
     headsign: string | null;
@@ -324,6 +331,24 @@ export type TransitRouteStopsResponse = {
   availableDirections: TransitRouteDirection[];
   count: number;
   items: TransitRouteStop[];
+};
+
+export type TransitRouteDeparture = {
+  tripId: string;
+  directionId: number;
+  headsign: string | null;
+  serviceDate: string;
+  departureAtIso: string;
+  stopId: string;
+  isLastOfDay: boolean;
+};
+
+export type TransitRouteDeparturesResponse = {
+  ok: boolean;
+  feedId: string;
+  routeId: string;
+  count: number;
+  items: TransitRouteDeparture[];
 };
 
 export type TransitRouteDirection = {
@@ -335,6 +360,14 @@ export type TransitRouteDirection = {
   lastStopName?: string | null;
 };
 
+/** Colours come from the GTFS feed; `textColorResolved` is contrast-checked server-side. */
+export type TransitRouteColors = {
+  color: string | null;
+  textColor: string | null;
+  textColorResolved: string;
+  sortOrder: number | null;
+};
+
 export type TransitRoute = {
   routeId: string;
   feedId: string;
@@ -342,6 +375,33 @@ export type TransitRoute = {
   longName: string | null;
   serviceDays: string[];
   directions: TransitRouteDirection[];
+} & TransitRouteColors;
+
+/** A single `[lat, lon, distanceTravelled]` vertex of a route's road geometry. */
+export type TransitShapePoint = [number, number, number?];
+
+export type TransitRouteShape = {
+  shapeId: string;
+  directionId: number | null;
+  pointCount: number;
+  tripCount: number;
+  isPrimary: true;
+  coords: TransitShapePoint[];
+};
+
+export type TransitRouteShapeVariant = {
+  shapeId: string;
+  directionId: number | null;
+  tripCount: number;
+  pointCount: number;
+};
+
+export type TransitRouteShapeResponse = {
+  ok: boolean;
+  feedId: string;
+  routeId: string;
+  shapes: TransitRouteShape[];
+  variants: TransitRouteShapeVariant[];
 };
 
 export type TransitRoutesResponse = {
@@ -381,4 +441,77 @@ export type WeatherResponse = {
   location: { lat: number; lng: number };
   current: WeatherCurrent;
   daily: WeatherDay[];
+};
+
+export type JourneyMode = 'WALK' | 'BIKE' | 'CAR' | 'TRANSIT' | 'FERRY';
+
+export type JourneyLegPoint = {
+  label: string;
+  lat: number;
+  lon: number;
+  /** Postgres GtfsStop.id when this point is a known transit stop — pass to /transit/stop/[stopId]. */
+  stopRef?: string;
+};
+
+/** Reuses the same contrast-checked-server-side convention as TransitRouteColors. */
+export type JourneyLegRoute = {
+  feedId: string;
+  routeId: string;
+  shortName: string | null;
+  longName: string | null;
+  color: string | null;
+  textColorResolved: string | null;
+  type: number | null;
+};
+
+export type JourneyLeg = {
+  mode: string;
+  startTime: string;
+  endTime: string;
+  durationSec: number;
+  distanceMeters: number;
+  from: JourneyLegPoint;
+  to: JourneyLegPoint;
+  /** [lat, lon] pairs — same convention as TransitShapePoint, feed straight into RouteMapLayer. */
+  geometry: [number, number][];
+  route?: JourneyLegRoute;
+  trip?: { tripId: string };
+  realTime: false;
+};
+
+export type JourneyItinerary = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  durationSec: number;
+  walkMeters: number;
+  walkSec: number;
+  transfers: number;
+  legs: JourneyLeg[];
+};
+
+export type JourneyNote = {
+  code: string;
+  message: string;
+};
+
+export type JourneyDegradedEstimate = {
+  reason: 'NO_ITINERARY' | 'ENGINE_DOWN' | 'GRAPH_BUILDING';
+  straightLineMeters: number;
+  walkEstimateSec: number;
+  driveEstimateSec: number;
+};
+
+export type JourneyPlanResponse = {
+  ok: true;
+  query: {
+    from: JourneyLegPoint;
+    to: JourneyLegPoint;
+    departAt: string;
+    arriveBy: boolean;
+    modes: string;
+  };
+  itineraries: JourneyItinerary[];
+  degradedEstimate?: JourneyDegradedEstimate;
+  notes: JourneyNote[];
 };

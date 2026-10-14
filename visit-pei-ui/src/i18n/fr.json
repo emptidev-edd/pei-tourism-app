@@ -70,7 +70,8 @@
       "happeningToday": "Aujourd'hui",
       "happeningTomorrow": "Demain",
       "thisWeek": "Cette semaine",
-      "viewEvent": "Voir l'événement"
+      "viewEvent": "Voir l'événement",
+      "viewAllEvents": "Voir les événements"
     }
   },
   "plan": {

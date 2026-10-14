@@ -55,7 +55,7 @@ const TrailCard = ({
             source={{ uri: place.imageUrl ?? TRAIL_THEME.imageUrl }}
             contentFit='cover'
             transition={200}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
           />
           <View style={styles.heroOverlay} />
           <View style={styles.heroBadge}>
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(5, 16, 21, 0.18)',
   },
   heroBadge: {

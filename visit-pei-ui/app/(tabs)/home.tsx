@@ -463,7 +463,7 @@ export default function HomeTab() {
 
   return (
     <>
-      <StatusBar style='light' backgroundColor={COLOR.brandGreen} />
+      <StatusBar style='light' />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
@@ -580,6 +580,27 @@ export default function HomeTab() {
 
           {heroEvent && heroBadgeKey ? (
             <View style={styles.todaySection}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push('/(tabs)/events')}
+                style={styles.viewEventsLink}
+                accessibilityRole='button'
+                accessibilityLabel={t('home.today.viewAllEvents')}
+              >
+                <MaterialCommunityIcons
+                  name='calendar-month-outline'
+                  size={16}
+                  color={COLOR.brandGreen}
+                />
+                <Text style={styles.viewEventsLinkText}>
+                  {t('home.today.viewAllEvents')}
+                </Text>
+                <MaterialCommunityIcons
+                  name='chevron-right'
+                  size={16}
+                  color={COLOR.brandGreen}
+                />
+              </TouchableOpacity>
               <TodayHero
                 event={heroEvent}
                 locale={locale}
@@ -822,6 +843,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+  viewEventsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 4,
+    marginBottom: 10,
+  },
+  viewEventsLinkText: {
+    color: COLOR.brandGreen,
+    fontSize: 13,
+    fontWeight: '800',
+  },
   todayCard: {
     width: '100%',
     minHeight: 220,
@@ -832,7 +865,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   todayImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   todayImageFallback: {
     backgroundColor: COLOR.lightGreen,
@@ -840,7 +873,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   todayOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 36, 28, 0.55)',
   },
   todayTopRow: {
@@ -1020,10 +1053,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   gridImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   gridImageOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   gridFallbackBadge: {
     alignSelf: 'flex-start',

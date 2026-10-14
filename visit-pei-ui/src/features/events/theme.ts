@@ -1,0 +1,17 @@
+export const EVENT = {
+  bg: '#f2f2f7',
+  surface: '#ffffff',
+  card: '#ffffff',
+  elevated: '#ffffff',
+  border: '#e8dfd0',
+  borderStrong: '#d1d5db',
+  text: '#344053',
+  muted: '#667085',
+  faint: 'rgba(52, 64, 83, 0.55)',
+  accent: '#007960',
+  accentSoft: '#e6f2ef',
+  happening: '#f8607a',
+  amber: '#d98d10',
+  onAccent: '#ffffff',
+  shadow: '0 8px 24px rgba(28, 37, 48, 0.08)',
+} as const;

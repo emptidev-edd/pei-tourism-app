@@ -32,6 +32,15 @@ type ExpoConstantsShape = {
   };
 };
 
+const isLoopbackHost = (host: string) =>
+  host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+
+const isTunnelHost = (host: string) =>
+  host.endsWith('.exp.direct') || host.endsWith('.expo.dev');
+
+const isUsableLanHost = (host: string) =>
+  Boolean(host) && !isLoopbackHost(host) && !isTunnelHost(host);
+
 const getHostFromRuntimeValue = (value?: string | null) => {
   if (!value) return null;
 
@@ -39,7 +48,9 @@ const getHostFromRuntimeValue = (value?: string | null) => {
   if (!trimmedValue) return null;
 
   try {
-    const parsedUrl = new URL(trimmedValue);
+    const parsedUrl = new URL(
+      trimmedValue.includes('://') ? trimmedValue : `http://${trimmedValue}`,
+    );
     return parsedUrl.hostname || null;
   } catch {
     const withoutProtocol = trimmedValue.replace(/^[a-z]+:\/\//i, '');
@@ -57,7 +68,7 @@ const getDevelopmentApiBaseUrl = () => {
     getHostFromRuntimeValue(constants.manifest2?.extra?.expoClient?.hostUri) ??
     getHostFromRuntimeValue(constants.linkingUri);
 
-  if (runtimeHost) {
+  if (runtimeHost && isUsableLanHost(runtimeHost)) {
     return `http://${runtimeHost}:4000`;
   }
 
@@ -72,18 +83,29 @@ const getDevelopmentApiBaseUrl = () => {
   return null;
 };
 
-export const getApiBaseUrl = () => {
-  const configuredBaseUrl =
-    process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ??
-    getDevelopmentApiBaseUrl();
+const getConfiguredHost = (value?: string) => {
+  if (!value) return null;
+  return getHostFromRuntimeValue(value);
+};
 
-  if (!configuredBaseUrl) {
+export const getApiBaseUrl = () => {
+  const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  const configuredHost = getConfiguredHost(configuredBaseUrl);
+  const configuredIsLoopback = !configuredHost || isLoopbackHost(configuredHost);
+
+  // Physical phones treat localhost as themselves. Use the Expo bundler host
+  // (the computer's LAN IP) whenever .env still points at localhost.
+  const resolvedBaseUrl = configuredIsLoopback
+    ? getDevelopmentApiBaseUrl() ?? configuredBaseUrl
+    : configuredBaseUrl;
+
+  if (!resolvedBaseUrl) {
     throw new Error(
       'Unable to determine the API server URL. Set EXPO_PUBLIC_API_BASE_URL to the TickitUp SA API, for example http://localhost:4000, http://10.0.2.2:4000 (Android emulator), or http://192.168.x.x:4000 (physical device).',
     );
   }
 
-  const normalizedBaseUrl = normalizeBaseUrl(configuredBaseUrl);
+  const normalizedBaseUrl = normalizeBaseUrl(resolvedBaseUrl);
   return normalizedBaseUrl.endsWith('/api')
     ? normalizedBaseUrl
     : `${normalizedBaseUrl}/api`;

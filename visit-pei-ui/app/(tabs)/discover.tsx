@@ -19,6 +19,7 @@ import { COLOR } from '../../styles';
 import { pickLocalized, useLocale } from '../../src/i18n';
 import { usePlacesQuery } from '../../src/services/query/places/usePlacesQuery';
 import { getPlaceTheme } from '../../src/utils/placeVisuals';
+import { nativeMapProps } from '../../src/utils/mapView';
 import type { Place } from '../../src/types/api';
 
 type ViewMode = 'list' | 'map';
@@ -270,6 +271,7 @@ export default function DiscoverTab() {
               showsUserLocation={false}
               tintColor={COLOR.brandGreen}
               onPress={() => setSelectedPlaceId(null)}
+              {...nativeMapProps}
             >
               {mapPlaces.map((place) => {
                 if (place.lat == null || place.lng == null) return null;
@@ -552,7 +554,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   pinWrap: {
     width: 28,

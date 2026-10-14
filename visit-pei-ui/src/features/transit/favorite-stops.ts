@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 
-import type { TransitStop } from '../types/api';
+import type { TransitStop } from '../../types/api';
 
 const STORAGE_KEY = 'visit-pei:favorite-stops';
 

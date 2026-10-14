@@ -1,5 +1,4 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -18,13 +17,11 @@ import {
 } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../styles';
+import { EventImage } from '../../src/features/events/event-image';
+import { eventPriceLabel } from '../../src/features/events/event-timing';
 import { useEventQuery } from '../../src/services/query/events/useEventQuery';
 import type { TickitUpEvent } from '../../src/types/api';
-import {
-  formatEventPrice,
-  getEventImageUrl,
-  getEventLocation,
-} from '../../src/utils/eventDisplay';
+import { getEventLocation } from '../../src/utils/eventDisplay';
 
 const formatEventDate = (event: TickitUpEvent) => {
   const start = new Date(event.startDate);
@@ -149,11 +146,11 @@ export default function EventDetailsScreen() {
   const event = eventQuery.data;
   const eventDateText = event ? formatEventDate(event) : null;
   const venueLabel = event ? getVenueLabel(event) : null;
-  const locationLabel = event ? getLocationLabel(event) : null;
+  const locationLabel = event ? getEventLocation(event) : null;
 
   return (
     <>
-      <StatusBar style='light' translucent />
+      <StatusBar style='light' />
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -213,22 +210,12 @@ export default function EventDetailsScreen() {
             contentContainerStyle={styles.contentContainer}
           >
             <View style={styles.heroWrap}>
-              {getEventImageUrl(event) ? (
-                <Image
-                  source={{ uri: getEventImageUrl(event) ?? undefined }}
-                  contentFit='cover'
-                  transition={150}
-                  style={styles.heroImage}
-                />
-              ) : (
-                <View style={styles.heroFallback}>
-                  <MaterialCommunityIcons
-                    name='calendar-star'
-                    size={40}
-                    color={COLOR.brandGreen}
-                  />
-                </View>
-              )}
+              <EventImage
+                event={event}
+                contentFit='cover'
+                transition={150}
+                style={styles.heroImage}
+              />
 
               <View style={styles.heroOverlay} />
 
@@ -293,11 +280,11 @@ export default function EventDetailsScreen() {
                     />
                   ) : null}
 
-                  {formatEventPrice(event) ? (
+                  {eventPriceLabel(event) ? (
                     <DetailInfoRow
                       icon='ticket-outline'
                       label='Tickets'
-                      value={formatEventPrice(event) ?? ''}
+                      value={eventPriceLabel(event) ?? ''}
                     />
                   ) : null}
 
@@ -371,16 +358,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLOR.lightGreen,
   },
   heroImage: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  heroFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLOR.lightGreen,
+    ...StyleSheet.absoluteFill,
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(4, 19, 24, 0.18)',
   },
   backButton: {

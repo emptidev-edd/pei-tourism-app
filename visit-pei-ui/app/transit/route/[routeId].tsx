@@ -1,8 +1,10 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import * as Location from 'expo-location';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -10,53 +12,35 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView from 'react-native-maps';
 import { Surface } from 'react-native-paper';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../../styles';
+import { TransitBackButton } from '../../../src/features/transit/components/back-button';
+import { DepartureCard } from '../../../src/features/transit/components/departure-card';
+import { RouteMapLayer } from '../../../src/features/transit/components/route-map-layer';
+import {
+  RouteTimelineItem,
+  type ScheduledRouteStop,
+} from '../../../src/features/transit/components/route-timeline-item';
+import { haversineMeters, metersToWalkMinutes } from '../../../src/features/transit/geo';
+import {
+  departureKey,
+  formatGtfsTime,
+  formatRouteClockTime,
+  getStopTimeSeconds,
+  isSameLocalDay,
+} from '../../../src/features/transit/route-schedule';
+import { getRouteNumber } from '../../../src/features/transit/transit-format';
+import { useNowTick } from '../../../src/features/transit/transit-time';
+import { useTransitRouteDeparturesQuery } from '../../../src/services/query/transit/useTransitRouteDeparturesQuery';
+import { useTransitRouteShapeQuery } from '../../../src/services/query/transit/useTransitRouteShapeQuery';
 import { useTransitRouteStopsQuery } from '../../../src/services/query/transit/useTransitRouteStopsQuery';
-import { formatCountdownLabel } from '../../../src/utils/transitTime';
-import type { TransitRouteStop } from '../../../src/types/api';
+import type { TransitRouteDeparture } from '../../../src/types/api';
+import { nativeMapProps } from '../../../src/utils/mapView';
 
-const parseGtfsTimeToSeconds = (value?: string | null) => {
-  if (!value) {
-    return null;
-  }
-
-  const parts = value.split(':').map(Number);
-  if (parts.length < 2 || parts.some((part) => !Number.isFinite(part))) {
-    return null;
-  }
-
-  const [hour, minute, second = 0] = parts;
-  return hour * 3600 + minute * 60 + second;
-};
-
-const getRouteNumber = (routeValue: string, routeShortName?: string | null) =>
-  routeShortName?.trim() || routeValue.split(':').pop()?.trim() || routeValue;
-
-const getStopTimeSeconds = (item: TransitRouteStop) =>
-  parseGtfsTimeToSeconds(item.departureTime || item.arrivalTime);
-
-const formatAbsoluteTime = (value?: string | null) => {
-  if (!value) {
-    return null;
-  }
-
-  return new Intl.DateTimeFormat('en-CA', {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value));
-};
-
-const formatGtfsTime = (gtfsTime?: string | null): string | null => {
-  if (!gtfsTime) return null;
-  const parts = gtfsTime.split(':');
-  if (parts.length < 2) return null;
-  const hour = parseInt(parts[0], 10) % 24;
-  return `${String(hour).padStart(2, '0')}:${parts[1]}`;
-};
+const PREVIEW_COUNT = 4;
 
 const cardShadow = Platform.select({
   ios: {
@@ -73,49 +57,138 @@ const cardShadow = Platform.select({
 export default function RouteDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [now, setNow] = useState(() => Date.now());
-  // null = show the trip we navigated in with; a number = user picked a direction.
+  const mapRef = useRef<MapView | null>(null);
+  const now = useNowTick();
   const [directionOverride, setDirectionOverride] = useState<number | null>(null);
-  const { feedId, focusDepartureAtIso, focusStopId, routeId, tripId } = useLocalSearchParams<{
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [userCoord, setUserCoord] = useState<{ lat: number; lon: number } | null>(
+    null,
+  );
+  const { feedId, focusStopId, routeId, tripId } = useLocalSearchParams<{
     feedId?: string;
     focusDepartureAtIso?: string;
     focusStopId?: string;
     routeId: string;
     tripId?: string;
   }>();
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(tripId ?? null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
   const routeQuery = useTransitRouteStopsQuery(
     {
       feedId,
       routeId: routeId ?? '',
-      tripId: directionOverride == null ? tripId || undefined : undefined,
-      directionId:
-        directionOverride ?? (tripId ? undefined : 0),
+      tripId: selectedTripId || undefined,
+      directionId: selectedTripId
+        ? undefined
+        : (directionOverride ?? undefined),
     },
     Boolean(routeId),
   );
+
   const activeDirectionId =
-    directionOverride ?? routeQuery.data?.trip?.directionId ?? 0;
-  // Focus params describe the trip we arrived with; they stop applying once
-  // the user switches to another direction (different trip, different times).
-  const focusApplies = Boolean(tripId) && routeQuery.data?.trip?.tripId === tripId;
-  const effectiveFocusStopId = focusApplies ? focusStopId : undefined;
+    directionOverride ??
+    (routeQuery.data ? (routeQuery.data.trip.directionId ?? 0) : null);
+
+  const departuresQuery = useTransitRouteDeparturesQuery(
+    {
+      feedId,
+      routeId: routeId ?? '',
+      directionId: activeDirectionId ?? undefined,
+      stopId: focusStopId,
+      days: 7,
+    },
+    Boolean(routeId) && activeDirectionId != null,
+  );
+
+  const departures = useMemo(
+    () => departuresQuery.data?.items ?? [],
+    [departuresQuery.data?.items],
+  );
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 30000);
+    let mounted = true;
 
-    return () => clearInterval(timer);
+    const loadLocation = async () => {
+      try {
+        const permission = await Location.getForegroundPermissionsAsync();
+        if (permission.status !== 'granted') return;
+        const last = await Location.getLastKnownPositionAsync();
+        if (!mounted || !last) return;
+        setUserCoord({
+          lat: last.coords.latitude,
+          lon: last.coords.longitude,
+        });
+      } catch {
+        // Walk time is optional when location is unavailable.
+      }
+    };
+
+    loadLocation();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!departuresQuery.isSuccess || departuresQuery.isFetching) return;
+    if (activeDirectionId == null) return;
+    if (departures.some((item) => item.directionId !== activeDirectionId)) return;
+    if (selectedKey && departures.some((item) => departureKey(item) === selectedKey)) {
+      return;
+    }
+
+    const fallback =
+      departures.find((item) => item.tripId === selectedTripId) ?? departures[0];
+    if (!fallback) return;
+    setSelectedKey(departureKey(fallback));
+    setSelectedTripId(fallback.tripId);
+  }, [
+    activeDirectionId,
+    departures,
+    departuresQuery.isFetching,
+    departuresQuery.isSuccess,
+    selectedKey,
+    selectedTripId,
+  ]);
 
   const route = routeQuery.data?.route ?? null;
   const items = useMemo(() => routeQuery.data?.items ?? [], [routeQuery.data?.items]);
-  const coordinates = items
-    .filter((item) => item.stop?.lat != null && item.stop?.lon != null)
-    .map((item) => ({
-      latitude: item.stop?.lat as number,
-      longitude: item.stop?.lon as number,
-    }));
+
+  const shapeQuery = useTransitRouteShapeQuery(
+    {
+      feedId,
+      routeId: routeId as string,
+      directionId: activeDirectionId ?? undefined,
+    },
+    Boolean(routeId),
+  );
+
+  /**
+   * Prefer the feed's real road geometry. The stop-to-stop line below is only
+   * a fallback for routes with no shape — it cuts straight through buildings.
+   */
+  const coordinates = useMemo(() => {
+    const shape =
+      shapeQuery.data?.shapes.find(
+        (candidate) => candidate.directionId === activeDirectionId,
+      ) ?? shapeQuery.data?.shapes[0];
+
+    if (shape?.coords.length) {
+      return shape.coords.map(([latitude, longitude]) => ({
+        latitude,
+        longitude,
+      }));
+    }
+
+    return items
+      .filter((item) => item.stop?.lat != null && item.stop?.lon != null)
+      .map((item) => ({
+        latitude: item.stop?.lat as number,
+        longitude: item.stop?.lon as number,
+      }));
+  }, [activeDirectionId, items, shapeQuery.data]);
 
   const initialRegion = coordinates[0]
     ? {
@@ -131,39 +204,78 @@ export default function RouteDetailsScreen() {
         longitudeDelta: 0.08,
       };
 
-  const focusStop = useMemo(
-    () => items.find((item) => item.stopId === effectiveFocusStopId) ?? null,
-    [effectiveFocusStopId, items],
-  );
+  const fitRoute = useCallback(() => {
+    if (!mapRef.current || coordinates.length === 0) return;
 
-  const focusStopSeconds = focusStop ? getStopTimeSeconds(focusStop) : null;
+    if (coordinates.length === 1) {
+      mapRef.current.animateToRegion(
+        {
+          ...coordinates[0],
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        },
+        250,
+      );
+      return;
+    }
 
-  const scheduledStops = useMemo(() => {
-    if (!focusApplies || !focusDepartureAtIso || focusStopSeconds == null) {
+    mapRef.current.fitToCoordinates(coordinates, {
+      edgePadding: { top: 36, right: 36, bottom: 36, left: 36 },
+      animated: true,
+    });
+  }, [coordinates]);
+
+  useEffect(() => {
+    fitRoute();
+  }, [fitRoute]);
+
+  const selectedDeparture =
+    departures.find((item) => departureKey(item) === selectedKey) ??
+    departures.find((item) => item.tripId === selectedTripId) ??
+    null;
+  const noUpcomingDepartures =
+    departuresQuery.isSuccess &&
+    !departuresQuery.isFetching &&
+    departures.length === 0;
+  const timelineReady = noUpcomingDepartures
+    ? Boolean(routeQuery.data)
+    : Boolean(selectedTripId) &&
+      routeQuery.data?.trip?.tripId === selectedTripId;
+
+  const anchorStop =
+    items.find((item) => item.stopId === selectedDeparture?.stopId) ??
+    items.find((item) => item.stopId === focusStopId) ??
+    items[0] ??
+    null;
+  const anchorSeconds = getStopTimeSeconds(anchorStop);
+  const anchorIso = selectedDeparture?.departureAtIso ?? null;
+
+  const scheduledStops: ScheduledRouteStop[] = useMemo(() => {
+    if (!anchorIso || anchorSeconds == null) {
       return items.map((item) => ({
         ...item,
-        scheduledAtIso: null as string | null,
+        scheduledAtIso: null,
       }));
     }
 
-    const focusedAtMs = new Date(focusDepartureAtIso).getTime();
+    const focusedAtMs = new Date(anchorIso).getTime();
 
     return items.map((item) => {
       const stopSeconds = getStopTimeSeconds(item);
       if (stopSeconds == null) {
         return {
           ...item,
-          scheduledAtIso: null as string | null,
+          scheduledAtIso: null,
         };
       }
 
-      const offsetMs = (stopSeconds - focusStopSeconds) * 1000;
+      const offsetMs = (stopSeconds - anchorSeconds) * 1000;
       return {
         ...item,
         scheduledAtIso: new Date(focusedAtMs + offsetMs).toISOString(),
       };
     });
-  }, [focusApplies, focusDepartureAtIso, focusStopSeconds, items]);
+  }, [anchorIso, anchorSeconds, items]);
 
   const activeStopIndex = useMemo(() => {
     let latestReachedIndex = -1;
@@ -177,9 +289,88 @@ export default function RouteDetailsScreen() {
     return latestReachedIndex;
   }, [now, scheduledStops]);
 
+  const previewDepartures = useMemo(() => {
+    const head = departures.slice(0, PREVIEW_COUNT);
+    if (
+      selectedDeparture &&
+      !head.some((item) => departureKey(item) === departureKey(selectedDeparture))
+    ) {
+      return [selectedDeparture, ...head.slice(0, PREVIEW_COUNT - 1)];
+    }
+    return head;
+  }, [departures, selectedDeparture]);
+
+  const departureGroups = useMemo(() => {
+    const groups: {
+      key: string;
+      title: string;
+      items: TransitRouteDeparture[];
+    }[] = [];
+
+    for (const item of departures) {
+      const date = new Date(item.departureAtIso);
+      const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      const title = isSameLocalDay(item.departureAtIso, now)
+        ? 'Today'
+        : date.toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'short',
+            day: 'numeric',
+          });
+      const last = groups[groups.length - 1];
+      if (last?.key === key) {
+        last.items.push(item);
+      } else {
+        groups.push({ key, title, items: [item] });
+      }
+    }
+
+    return groups;
+  }, [departures, now]);
+
+  const activeDirection = routeQuery.data?.availableDirections.find(
+    (direction) => direction.directionId === activeDirectionId,
+  );
+  const isLoop =
+    Boolean(activeDirection?.headsign && /loop/i.test(activeDirection.headsign)) ||
+    Boolean(
+      activeDirection?.firstStopName &&
+        activeDirection.firstStopName === activeDirection.lastStopName,
+    );
+  const directionLabel = isLoop
+    ? 'Loop'
+    : activeDirection?.lastStopName
+      ? `To ${activeDirection.lastStopName}`
+      : activeDirection?.headsign;
+
+  const focusStop = items.find((item) => item.stopId === focusStopId) ?? null;
+  const walkMinutes = useMemo(() => {
+    const target = focusStop?.stop;
+    if (!userCoord || target?.lat == null || target?.lon == null) return null;
+    const meters = haversineMeters(
+      userCoord.lat,
+      userCoord.lon,
+      target.lat,
+      target.lon,
+    );
+    return metersToWalkMinutes(meters);
+  }, [focusStop?.stop, userCoord]);
+
+  const selectDirection = (directionId: number) => {
+    setDirectionOverride(directionId);
+    setSelectedTripId(null);
+    setSelectedKey(null);
+  };
+
+  const selectDeparture = (departure: TransitRouteDeparture) => {
+    setSelectedKey(departureKey(departure));
+    setSelectedTripId(departure.tripId);
+    setMoreOpen(false);
+  };
+
   return (
     <>
-      <StatusBar style='light' translucent />
+      <StatusBar style='light' />
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -190,135 +381,139 @@ export default function RouteDetailsScreen() {
         >
           <View style={styles.heroWrap}>
             <MapView
+              ref={mapRef}
               style={styles.map}
               initialRegion={initialRegion}
-              region={initialRegion}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              rotateEnabled={false}
-              pitchEnabled={false}
+              onMapReady={fitRoute}
+              {...nativeMapProps}
             >
-              {coordinates.length > 1 ? (
-                <Polyline
-                  coordinates={coordinates}
-                  strokeColor='#ff6666'
-                  strokeWidth={5}
-                />
-              ) : null}
-
-              {items.map((item) => {
-                if (item.stop?.lat == null || item.stop?.lon == null) {
-                  return null;
-                }
-
-                const focused = item.stopId === effectiveFocusStopId;
-
-                return (
-                  <Marker
-                    key={`${item.stopId}-${item.stopSequence}`}
-                    coordinate={{
-                      latitude: item.stop.lat,
-                      longitude: item.stop.lon,
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.markerWrap,
-                        focused && styles.markerWrapFocused,
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name='bus'
-                        size={16}
-                        color={COLOR.whiteText}
-                      />
-                    </View>
-                  </Marker>
-                );
-              })}
+              <RouteMapLayer
+                coordinates={coordinates}
+                items={items}
+                focusStopId={focusStopId}
+                routeColor={route?.color}
+              />
             </MapView>
 
-            <View style={styles.heroOverlay} />
+            <View pointerEvents='none' style={styles.heroOverlay} />
 
-            <TouchableOpacity
-              accessibilityRole='button'
-              activeOpacity={0.84}
-              onPress={() => router.back()}
-              style={[styles.backButton, { top: insets.top + 14 }]}
-            >
-              <MaterialCommunityIcons
-                name='arrow-left'
-                size={22}
-                color={COLOR.whiteText}
-              />
-            </TouchableOpacity>
+            <TransitBackButton onPress={() => router.back()} top={insets.top + 14} />
           </View>
 
           <Surface style={styles.contentCard} elevation={0}>
-            <View style={styles.routeBadge}>
-              <MaterialCommunityIcons
-                name='bus'
-                size={16}
-                color={COLOR.brandGreen}
-              />
-              <Text style={styles.routeBadgeText}>
+            <View style={styles.routeHeader}>
+              <Text style={styles.routeNumber}>
                 {getRouteNumber(routeId, route?.shortName)}
               </Text>
+              {directionLabel ? (
+                <View style={styles.directionLabel}>
+                  <MaterialCommunityIcons
+                    name={isLoop ? 'sync' : 'arrow-right'}
+                    size={16}
+                    color={COLOR.brandGreen}
+                  />
+                  <Text style={styles.directionLabelText} numberOfLines={2}>
+                    {directionLabel}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
-            {(routeQuery.data?.availableDirections?.length ?? 0) > 1 ? (() => {
-              const dirs = routeQuery.data!.availableDirections;
-              const allSameHeadsign = dirs.every(d => d.headsign === dirs[0].headsign);
-              const fallbackLabels = ['Outbound', 'Return'];
-              return (
-                <View style={styles.directionToggle}>
-                  {dirs.map((dir, i) => {
-                    const distinctHeadsign = !allSameHeadsign && dir.headsign?.trim();
-                    const label =
-                      distinctHeadsign ||
-                      (dir.lastStopName?.trim()
-                        ? `To ${dir.lastStopName.trim()}`
-                        : fallbackLabels[i] ?? `Direction ${i + 1}`);
-                    const active = activeDirectionId === dir.directionId;
-                    return (
-                      <TouchableOpacity
-                        key={dir.directionId}
-                        activeOpacity={0.84}
-                        onPress={() => setDirectionOverride(dir.directionId)}
+            {(routeQuery.data?.availableDirections?.length ?? 0) > 1 ? (
+              <View style={styles.directionToggle}>
+                {routeQuery.data!.availableDirections.map((dir, index) => {
+                  const dirs = routeQuery.data!.availableDirections;
+                  const allSameHeadsign = dirs.every(
+                    (item) => item.headsign === dirs[0].headsign,
+                  );
+                  const fallbackLabels = ['Outbound', 'Return'];
+                  const distinctHeadsign = !allSameHeadsign && dir.headsign?.trim();
+                  const label =
+                    distinctHeadsign ||
+                    (dir.lastStopName?.trim()
+                      ? `To ${dir.lastStopName.trim()}`
+                      : fallbackLabels[index] ?? `Direction ${index + 1}`);
+                  const active = activeDirectionId === dir.directionId;
+                  return (
+                    <TouchableOpacity
+                      key={dir.directionId}
+                      activeOpacity={0.84}
+                      onPress={() => selectDirection(dir.directionId)}
+                      style={[
+                        styles.directionOption,
+                        active && styles.directionOptionActive,
+                      ]}
+                    >
+                      <Text
                         style={[
-                          styles.directionOption,
-                          active && styles.directionOptionActive,
+                          styles.directionOptionText,
+                          active && styles.directionOptionTextActive,
                         ]}
+                        numberOfLines={1}
                       >
-                        <Text
-                          style={[
-                            styles.directionOptionText,
-                            active && styles.directionOptionTextActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              );
-            })() : null}
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
 
             <Text style={styles.title}>
               {route?.longName?.trim() || 'Transit route'}
             </Text>
 
-            {focusStop?.stop?.name ? (
-              <View style={styles.liveInfoCard}>
-                <Text style={styles.liveInfoTitle}>
-                  Tracking toward {focusStop.stop.name}
-                </Text>
-                <Text style={styles.liveInfoText}>
-                  This is schedule-based stop tracking for the selected trip. It updates every 30 seconds.
-                </Text>
-              </View>
+            {departuresQuery.isPending ? (
+              <Text style={styles.scheduleStatus}>Loading departures...</Text>
+            ) : null}
+
+            {departuresQuery.isError ? (
+              <Text style={styles.scheduleStatus}>
+                Departures are unavailable right now.
+              </Text>
+            ) : null}
+
+            {!departuresQuery.isPending &&
+            !departuresQuery.isError &&
+            departures.length === 0 ? (
+              <Text style={styles.scheduleStatus}>
+                No upcoming departures in the next 7 days.
+              </Text>
+            ) : null}
+
+            {previewDepartures.length > 0 ? (
+              <ScrollView
+                horizontal
+                nestedScrollEnabled
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.departureRow}
+              >
+                {previewDepartures.map((departure) => (
+                  <DepartureCard
+                    key={departureKey(departure)}
+                    departure={departure}
+                    now={now}
+                    selected={
+                      selectedDeparture != null &&
+                      departureKey(departure) === departureKey(selectedDeparture)
+                    }
+                    onPress={() => selectDeparture(departure)}
+                  />
+                ))}
+                <TouchableOpacity
+                  activeOpacity={0.84}
+                  onPress={() => setMoreOpen(true)}
+                  style={styles.moreCard}
+                >
+                  <MaterialCommunityIcons
+                    name='clock-outline'
+                    size={22}
+                    color={COLOR.brandGreen}
+                  />
+                  <Text style={styles.moreTitle}>More</Text>
+                  <Text style={styles.moreSubtitle}>departures</Text>
+                </TouchableOpacity>
+              </ScrollView>
             ) : null}
 
             {route?.desc?.trim() ? (
@@ -332,97 +527,93 @@ export default function RouteDetailsScreen() {
               </Text>
             </View>
 
-            <View style={styles.timelineList}>
-              {scheduledStops.map((item, index) => {
-                const focused = item.stopId === effectiveFocusStopId;
-                const active = index === activeStopIndex;
-                const isPast = index <= activeStopIndex;
-                const absoluteTime =
-                  formatAbsoluteTime(item.scheduledAtIso) ??
-                  formatGtfsTime(item.departureTime || item.arrivalTime);
-                const countdownLabel = formatCountdownLabel(item.scheduledAtIso, now);
-                const isFirst = index === 0;
-                const isLast = index === scheduledStops.length - 1;
+            {routeQuery.isError ? (
+              <Text style={styles.scheduleStatus}>
+                Stops are unavailable right now.
+              </Text>
+            ) : !timelineReady ? (
+              <Text style={styles.scheduleStatus}>Loading stops...</Text>
+            ) : (
+              <View style={styles.timelineList}>
+                {scheduledStops.map((item, index) => {
+                  const focused = item.stopId === focusStopId;
+                  const absoluteTime =
+                    formatRouteClockTime(item.scheduledAtIso) ??
+                    formatGtfsTime(item.departureTime || item.arrivalTime);
 
-                const lineColor = (above: boolean) => {
-                  if (above) {
-                    return isFirst ? 'transparent' : (index <= activeStopIndex ? COLOR.brandGreen : '#d1d5db');
-                  }
-                  return isLast ? 'transparent' : (index < activeStopIndex ? COLOR.brandGreen : '#d1d5db');
-                };
-
-                return (
-                  <View
-                    key={`${item.stopId}-${item.stopSequence}`}
-                    style={styles.timelineItem}
-                  >
-                    <View style={styles.timelineLineCol}>
-                      <View style={[styles.timelineLineSeg, { backgroundColor: lineColor(true) }]} />
-                      <View
-                        style={[
-                          styles.timelineDot,
-                          isPast ? styles.timelineDotPast : styles.timelineDotFuture,
-                          focused && styles.timelineDotFocused,
-                        ]}
-                      />
-                      <View style={[styles.timelineLineSeg, { backgroundColor: lineColor(false) }]} />
-                    </View>
-
-                    <View style={styles.timelineContent}>
-                      <View style={styles.stopRow}>
-                        <View style={styles.stopCopy}>
-                          <Text
-                            style={[
-                              styles.stopName,
-                              active && styles.stopNameActive,
-                              focused && styles.stopNameFocused,
-                            ]}
-                          >
-                            {item.stop?.name ?? item.stopId}
-                          </Text>
-                          <Text style={styles.stopMeta}>Scheduled time</Text>
-
-                          {focused ? (
-                            <Text style={styles.stopHint}>Your selected stop</Text>
-                          ) : null}
-
-                          {active && !focused ? (
-                            <Text style={styles.stopHint}>Current scheduled stop</Text>
-                          ) : null}
-                        </View>
-
-                        {absoluteTime ? (
-                          <View style={styles.stopTimeAside}>
-                            <View
-                              style={[
-                                styles.stopTimePill,
-                                focused && styles.stopTimePillFocused,
-                              ]}
-                            >
-                              <MaterialCommunityIcons
-                                name='clock-outline'
-                                size={13}
-                                color={focused ? COLOR.whiteText : COLOR.brandGreen}
-                              />
-                              <Text
-                                style={[
-                                  styles.stopTimePrimaryText,
-                                  focused && styles.stopTimePrimaryTextFocused,
-                                ]}
-                              >
-                                {countdownLabel ?? absoluteTime}
-                              </Text>
-                            </View>
-                          </View>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
+                  return (
+                    <RouteTimelineItem
+                      key={`${item.stopId}-${item.stopSequence}`}
+                      item={item}
+                      index={index}
+                      activeStopIndex={activeStopIndex}
+                      isFirst={index === 0}
+                      isLast={index === scheduledStops.length - 1}
+                      focused={focused}
+                      walkMinutes={walkMinutes}
+                      absoluteTime={absoluteTime}
+                    />
+                  );
+                })}
+              </View>
+            )}
           </Surface>
         </ScrollView>
+
+        <Modal
+          visible={moreOpen}
+          animationType='slide'
+          transparent
+          onRequestClose={() => setMoreOpen(false)}
+        >
+          <View style={styles.sheetBackdrop}>
+            <View style={[styles.moreSheet, { paddingBottom: insets.bottom + 16 }]}>
+              <View style={styles.moreSheetHeader}>
+                <Text style={styles.moreSheetTitle}>All departures</Text>
+                <TouchableOpacity
+                  accessibilityRole='button'
+                  onPress={() => setMoreOpen(false)}
+                  style={styles.moreClose}
+                >
+                  <MaterialCommunityIcons name='close' size={20} color='#16202a' />
+                </TouchableOpacity>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {departureGroups.map((group) => (
+                  <View key={group.key} style={styles.moreGroup}>
+                    <Text style={styles.moreGroupTitle}>{group.title}</Text>
+                    {group.items.map((item) => {
+                      const selected =
+                        selectedDeparture != null &&
+                        departureKey(item) === departureKey(selectedDeparture);
+                      return (
+                        <TouchableOpacity
+                          key={departureKey(item)}
+                          activeOpacity={0.84}
+                          onPress={() => selectDeparture(item)}
+                          style={[
+                            styles.moreRow,
+                            selected && styles.moreRowSelected,
+                          ]}
+                        >
+                          <Text style={styles.moreRowTime}>
+                            {formatRouteClockTime(item.departureAtIso)}
+                          </Text>
+                          <Text style={styles.moreRowMeta} numberOfLines={1}>
+                            {item.headsign?.trim() || 'Scheduled'}
+                          </Text>
+                          {item.isLastOfDay ? (
+                            <Text style={styles.moreLast}>Last</Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </>
   );
@@ -446,32 +637,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0d1b23',
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 38, 48, 0.16)',
-  },
-  backButton: {
-    position: 'absolute',
-    left: 20,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.20)',
-  },
-  markerWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#9dc1b8',
-  },
-  markerWrapFocused: {
-    backgroundColor: COLOR.brandGreen,
   },
   contentCard: {
     marginTop: -24,
@@ -482,20 +652,28 @@ const styles = StyleSheet.create({
     gap: 18,
     ...cardShadow,
   },
-  routeBadge: {
-    alignSelf: 'flex-start',
+  routeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  routeNumber: {
+    color: '#16202a',
+    fontSize: 42,
+    fontWeight: '800',
+    lineHeight: 46,
+  },
+  directionLabel: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: '#efefef',
   },
-  routeBadgeText: {
+  directionLabelText: {
+    flex: 1,
     color: '#16202a',
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   title: {
     color: '#16202a',
@@ -503,22 +681,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 28,
   },
-  liveInfoCard: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#f3faf7',
-    gap: 6,
+  scheduleStatus: {
+    color: '#667887',
+    fontSize: 14,
+    lineHeight: 20,
   },
-  liveInfoTitle: {
+  departureRow: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  moreCard: {
+    width: 112,
+    minHeight: 96,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#efefef',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  moreTitle: {
     color: '#16202a',
     fontSize: 16,
     fontWeight: '800',
   },
-  liveInfoText: {
-    color: '#506270',
+  moreSubtitle: {
+    color: '#6b7e8d',
     fontSize: 13,
-    lineHeight: 19,
+    fontWeight: '700',
   },
   description: {
     color: '#667887',
@@ -543,103 +733,6 @@ const styles = StyleSheet.create({
   timelineList: {
     gap: 0,
   },
-  timelineItem: {
-    flexDirection: 'row',
-  },
-  timelineLineCol: {
-    width: 28,
-    alignItems: 'center',
-  },
-  timelineLineSeg: {
-    flex: 1,
-    width: 2,
-  },
-  timelineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  timelineDotPast: {
-    backgroundColor: COLOR.brandGreen,
-  },
-  timelineDotFuture: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: '#d1d5db',
-  },
-  timelineDotFocused: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: COLOR.brandGreen,
-    borderWidth: 2,
-    borderColor: COLOR.brandGreen,
-  },
-  timelineContent: {
-    flex: 1,
-  },
-  stopRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingLeft: 12,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
-  },
-  stopCopy: {
-    flex: 1,
-    gap: 3,
-  },
-  stopTimeAside: {
-    alignItems: 'flex-end',
-  },
-  stopName: {
-    color: '#4a5f6d',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 22,
-  },
-  stopNameActive: {
-    color: '#16355b',
-  },
-  stopNameFocused: {
-    color: '#16202a',
-  },
-  stopMeta: {
-    color: '#6b7e8d',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  stopHint: {
-    color: COLOR.brandGreen,
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  stopTimePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#efefef',
-  },
-  stopTimePrimaryText: {
-    color: '#16202a',
-    fontSize: 13,
-    fontWeight: '800',
-    lineHeight: 16,
-  },
-  stopTimePrimaryTextFocused: {
-    color: COLOR.whiteText,
-  },
-  stopTimePillFocused: {
-    backgroundColor: COLOR.brandGreen,
-  },
   directionToggle: {
     flexDirection: 'row',
     gap: 8,
@@ -663,5 +756,75 @@ const styles = StyleSheet.create({
   directionOptionTextActive: {
     color: COLOR.whiteText,
     fontWeight: '800',
+  },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(7, 19, 26, 0.45)',
+  },
+  moreSheet: {
+    maxHeight: '78%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  moreSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  moreSheetTitle: {
+    color: '#16202a',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  moreClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#efefef',
+  },
+  moreGroup: {
+    paddingBottom: 12,
+  },
+  moreGroupTitle: {
+    color: '#16202a',
+    fontSize: 15,
+    fontWeight: '800',
+    paddingVertical: 10,
+  },
+  moreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
+  },
+  moreRowSelected: {
+    backgroundColor: '#f3faf7',
+  },
+  moreRowTime: {
+    width: 64,
+    color: '#16202a',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  moreRowMeta: {
+    flex: 1,
+    color: '#6b7e8d',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  moreLast: {
+    color: COLOR.brandGreen,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
 });

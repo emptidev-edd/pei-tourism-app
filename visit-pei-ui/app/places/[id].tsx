@@ -148,7 +148,7 @@ const PlaceDetailsScreen = () => {
 
   return (
     <>
-      <StatusBar style='dark' translucent />
+      <StatusBar style='dark' />
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -437,10 +437,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLOR.lightGreen,
   },
   heroImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   heroPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 14,
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(5, 16, 21, 0.10)',
   },
   overlayButton: {

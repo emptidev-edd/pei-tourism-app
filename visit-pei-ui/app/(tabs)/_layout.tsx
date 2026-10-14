@@ -1,6 +1,6 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { CommonActions } from '@react-navigation/native';
 import { Tabs } from 'expo-router';
+import { CommonActions } from 'expo-router/react-navigation';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useLocale } from '../../src/i18n';
@@ -17,6 +17,8 @@ const TabsLayout = () => {
         headerShown: false,
       }}
       tabBar={({ navigation, state, descriptors, insets }) => {
+        if (state.routes[state.index]?.name === 'events') return null;
+
         const bottomOffset = Math.max(insets.bottom, 20);
 
         return (

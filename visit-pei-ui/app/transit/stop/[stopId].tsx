@@ -1,7 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Linking,
   Platform,
@@ -16,28 +16,15 @@ import { Surface } from 'react-native-paper';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLOR } from '../../../styles';
+import { TransitBackButton } from '../../../src/features/transit/components/back-button';
+import { StopArrivalCard } from '../../../src/features/transit/components/stop-arrival-card';
+import { TransitStateCard } from '../../../src/features/transit/components/state-card';
+import { toFavoriteStop, useFavoriteStops } from '../../../src/features/transit/favorite-stops';
+import { formatClockTime, useNowTick } from '../../../src/features/transit/transit-time';
 import { useTransitStopArrivalsQuery } from '../../../src/services/query/transit/useTransitStopArrivalsQuery';
 import { useTransitStopScheduleQuery } from '../../../src/services/query/transit/useTransitStopScheduleQuery';
-import {
-  toFavoriteStop,
-  useFavoriteStops,
-} from '../../../src/utils/favoriteStops';
-import {
-  formatClockTime,
-  formatNextTimesLine,
-  getCountdownParts,
-} from '../../../src/utils/transitTime';
 import type { TransitArrival, TransitServedRoute } from '../../../src/types/api';
-
-const getRouteNumber = (arrival: TransitArrival) =>
-  arrival.routeShortName?.trim() ||
-  arrival.routeId.split(':').pop()?.trim() ||
-  arrival.routeId;
-
-const getRouteTitle = (arrival: TransitArrival) =>
-  arrival.routeLongName?.trim() ||
-  arrival.headsign?.trim() ||
-  'Transit line';
+import { nativeMapProps } from '../../../src/utils/mapView';
 
 const openStopInMaps = async (lat: number | null, lon: number | null, label: string) => {
   if (lat == null || lon == null) {
@@ -70,7 +57,7 @@ const cardShadow = Platform.select({
 export default function StopDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [now, setNow] = useState(() => Date.now());
+  const now = useNowTick();
   const { feedId, stopId } = useLocalSearchParams<{
     feedId?: string;
     stopId: string;
@@ -89,14 +76,6 @@ export default function StopDetailsScreen() {
     showFullSchedule && Boolean(stopId),
   );
   const { isFavorite, toggleFavorite } = useFavoriteStops();
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 30000);
-
-    return () => clearInterval(timer);
-  }, []);
 
   const stop = stopQuery.data?.stop ?? null;
   const arrivals = useMemo(() => stopQuery.data?.items ?? [], [stopQuery.data?.items]);
@@ -144,7 +123,7 @@ export default function StopDetailsScreen() {
 
   return (
     <>
-      <StatusBar style='light' translucent />
+      <StatusBar style='light' />
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
@@ -163,6 +142,7 @@ export default function StopDetailsScreen() {
                 zoomEnabled={false}
                 rotateEnabled={false}
                 pitchEnabled={false}
+                {...nativeMapProps}
               >
                 <Marker
                   coordinate={{
@@ -189,20 +169,9 @@ export default function StopDetailsScreen() {
               </View>
             )}
 
-            <View style={styles.heroOverlay} />
+            <View pointerEvents='none' style={styles.heroOverlay} />
 
-            <TouchableOpacity
-              accessibilityRole='button'
-              activeOpacity={0.84}
-              onPress={() => router.back()}
-              style={[styles.backButton, { top: insets.top + 14 }]}
-            >
-              <MaterialCommunityIcons
-                name='arrow-left'
-                size={22}
-                color={COLOR.whiteText}
-              />
-            </TouchableOpacity>
+            <TransitBackButton onPress={() => router.back()} top={insets.top + 14} />
           </View>
 
           <Surface style={styles.contentCard} elevation={0}>
@@ -247,6 +216,31 @@ export default function StopDetailsScreen() {
                   </Text>
                 </TouchableOpacity>
               ) : null}
+
+              {stop ? (
+                <TouchableOpacity
+                  activeOpacity={0.84}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/journey/results',
+                      params: {
+                        toRef: `stop:${stop.id}`,
+                        toLat: String(stop.lat ?? ''),
+                        toLon: String(stop.lon ?? ''),
+                        toLabel: stop.name ?? stopId ?? 'This stop',
+                      },
+                    })
+                  }
+                  style={styles.primaryAction}
+                >
+                  <MaterialCommunityIcons
+                    name='map-marker-path'
+                    size={18}
+                    color={COLOR.brandGreen}
+                  />
+                  <Text style={styles.primaryActionText}>Get there</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             {(stopQuery.data?.servedRoutes?.length ?? 0) > 0 ? (
@@ -269,9 +263,11 @@ export default function StopDetailsScreen() {
 
             <View style={styles.arrivalsList}>
               {groupedRoutes.map(({ routeId, first, items }) => (
-                <TouchableOpacity
+                <StopArrivalCard
                   key={routeId}
-                  activeOpacity={0.84}
+                  first={first}
+                  items={items}
+                  now={now}
                   onPress={() =>
                     router.push({
                       pathname: '/transit/route/[routeId]',
@@ -284,70 +280,14 @@ export default function StopDetailsScreen() {
                       },
                     })
                   }
-                  style={styles.arrivalCard}
-                >
-                  <View style={styles.arrivalMain}>
-                    <View style={styles.arrivalRowHeader}>
-                      <View style={styles.routeBadge}>
-                        <View style={styles.routeBadgeInner}>
-                          <MaterialCommunityIcons name='bus' size={13} color={COLOR.brandGreen} />
-                          <Text style={styles.routeBadgeText}>{getRouteNumber(first)}</Text>
-                        </View>
-                        <View style={styles.routeBadgeStrip} />
-                      </View>
-
-                      <View style={styles.arrivalCopy}>
-                        <Text style={styles.arrivalTitle} numberOfLines={2}>
-                          {getRouteTitle(first)}
-                        </Text>
-
-                        <Text style={styles.arrivalSubtitle}>Scheduled time</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.arrivalAside}>
-                    <View style={styles.countdownPill}>
-                      <MaterialCommunityIcons
-                        name='clock-outline'
-                        size={14}
-                        color={COLOR.brandGreen}
-                      />
-                      {(() => {
-                        const { unit, value } = getCountdownParts(
-                          first.departureAtIso,
-                          now,
-                        );
-
-                        return (
-                          <View style={styles.countdownValueRow}>
-                            <Text style={styles.countdownValueText}>
-                              {value}
-                            </Text>
-                            {unit ? (
-                              <Text style={styles.countdownUnitText}>
-                                {unit}
-                              </Text>
-                            ) : null}
-                          </View>
-                        );
-                      })()}
-                    </View>
-                    <Text style={styles.countdownText}>
-                      {formatNextTimesLine(items, now) ??
-                        formatClockTime(first.departureAtIso)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                />
               ))}
 
               {!stopQuery.isPending && groupedRoutes.length === 0 ? (
-                <View style={styles.stateCard}>
-                  <Text style={styles.stateTitle}>No arrivals right now</Text>
-                  <Text style={styles.stateDescription}>
-                    There are no scheduled upcoming trips for this stop right now.
-                  </Text>
-                </View>
+                <TransitStateCard
+                  title='No arrivals right now'
+                  description='There are no scheduled upcoming trips for this stop right now.'
+                />
               ) : null}
             </View>
 
@@ -377,7 +317,7 @@ export default function StopDetailsScreen() {
                     {(scheduleQuery.data?.items ?? []).map((item, idx) => (
                       <View key={`${item.tripId}-${idx}`} style={styles.scheduleTimeChip}>
                         <Text style={styles.scheduleTimeChipText}>
-                          {new Intl.DateTimeFormat('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(item.departureAtIso))}
+                          {formatClockTime(item.departureAtIso)}
                         </Text>
                       </View>
                     ))}
@@ -410,7 +350,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0d1b23',
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   mapFallback: {
     flex: 1,
@@ -419,18 +359,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f1b24',
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 38, 48, 0.16)',
-  },
-  backButton: {
-    position: 'absolute',
-    left: 20,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.20)',
   },
   markerWrap: {
     width: 38,
@@ -494,121 +424,6 @@ const styles = StyleSheet.create({
   arrivalsList: {
     gap: 0,
   },
-  arrivalCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 121, 96, 0.10)',
-  },
-  arrivalMain: {
-    flex: 1,
-    gap: 6,
-  },
-  arrivalRowHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  arrivalAside: {
-    alignItems: 'center',
-    minWidth: 88,
-  },
-  routeBadge: {
-    minWidth: 56,
-    borderRadius: 4,
-    overflow: 'hidden',
-    alignItems: 'center',
-    backgroundColor: '#efefef',
-  },
-  routeBadgeInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingTop: 6,
-    paddingBottom: 4,
-    paddingHorizontal: 8,
-  },
-  routeBadgeText: {
-    color: '#16202a',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  routeBadgeStrip: {
-    alignSelf: 'stretch',
-    height: 4,
-    backgroundColor: COLOR.brandGreen,
-  },
-  arrivalCopy: {
-    flex: 1,
-    gap: 5,
-  },
-  arrivalTitle: {
-    color: '#16202a',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 22,
-  },
-  arrivalSubtitle: {
-    color: '#6b7e8d',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  countdownPill: {
-    minWidth: 78,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#efefef',
-    gap: 6,
-  },
-  countdownValueRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 3,
-  },
-  countdownValueText: {
-    color: '#16202a',
-    fontSize: 20,
-    fontWeight: '800',
-    lineHeight: 24,
-  },
-  countdownUnitText: {
-    color: '#6b7e8d',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 15,
-    paddingBottom: 2,
-  },
-  countdownText: {
-    color: '#6b7e8d',
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-    marginTop: 4,
-  },
-  stateCard: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    backgroundColor: '#f5f8fb',
-    gap: 8,
-  },
-  stateTitle: {
-    color: '#16202a',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  stateDescription: {
-    color: '#667887',
-    fontSize: 14,
-    lineHeight: 20,
-  },
   servedRoutesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -644,30 +459,10 @@ const styles = StyleSheet.create({
   fullScheduleSection: {
     gap: 0,
   },
-  fullScheduleTitle: {
-    color: '#16202a',
-    fontSize: 15,
-    fontWeight: '800',
-    paddingBottom: 10,
-  },
   scheduleLoadingText: {
     color: '#6b7e8d',
     fontSize: 14,
     paddingVertical: 8,
-  },
-  routeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: '#efefef',
-  },
-  routeBoxText: {
-    color: '#16202a',
-    fontSize: 13,
-    fontWeight: '800',
   },
   scheduleTimeGrid: {
     flexDirection: 'row',

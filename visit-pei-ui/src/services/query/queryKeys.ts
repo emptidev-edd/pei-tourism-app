@@ -15,6 +15,7 @@ export const queryKeys = {
       search?: string;
     }) => ['events', 'list', params] as const,
     detail: (slug: string) => ['events', 'detail', slug] as const,
+    categories: ['events', 'categories'] as const,
   },
   transit: {
     nearbyStops: (params: {
@@ -31,6 +32,15 @@ export const queryKeys = {
     }) => ['transit', 'stopArrivals', params] as const,
     routeStops: (params: { feedId?: string; routeId: string; tripId?: string; directionId?: number }) =>
       ['transit', 'routeStops', params] as const,
+    routeDepartures: (params: {
+      feedId?: string;
+      routeId: string;
+      directionId?: number;
+      stopId?: string;
+      days?: number;
+    }) => ['transit', 'routeDepartures', params] as const,
+    routeShape: (params: { feedId?: string; routeId: string; directionId?: number }) =>
+      ['transit', 'routeShape', params] as const,
     routes: (params: { feedId?: string }) => ['transit', 'routes', params] as const,
     stopSchedule: (params: { feedId?: string; stopId: string; date?: string }) =>
       ['transit', 'stopSchedule', params] as const,
@@ -57,5 +67,14 @@ export const queryKeys = {
       shuffle?: boolean;
       shuffleSeed?: number;
     }) => ['trip', 'dayPlan', params] as const,
+  },
+  journey: {
+    plan: (params: {
+      from: string;
+      to: string;
+      departAt?: string;
+      arriveBy?: boolean;
+      modes?: string[];
+    }) => ['journey', 'plan', params] as const,
   },
 };

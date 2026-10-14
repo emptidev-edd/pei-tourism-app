@@ -81,7 +81,7 @@ export default function SettingsScreen() {
 
   return (
     <>
-      <StatusBar style='dark' backgroundColor={COLOR.background} />
+      <StatusBar style='dark' />
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.headerRow}>

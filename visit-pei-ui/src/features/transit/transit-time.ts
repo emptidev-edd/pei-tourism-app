@@ -1,4 +1,7 @@
-import type { TransitArrival } from '../types/api';
+import { useEffect, useState } from 'react';
+
+import type { TransitArrival } from '../../types/api';
+import { AGENCY_TZ } from './constants';
 
 const MINUTE_MS = 60 * 1000;
 
@@ -50,6 +53,7 @@ export const formatCountdownLabel = (
 
 export const formatClockTime = (departureAtIso: string) =>
   new Intl.DateTimeFormat('en-CA', {
+    timeZone: AGENCY_TZ,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -83,3 +87,16 @@ export const formatNextTimesLine = (
 
   return next.map((item) => formatClockTime(item.departureAtIso)).join(', ');
 };
+
+/**
+ * Shared 30s ticker for the three transit screens, each of which needs a
+ * fresh `now` to keep countdown pills honest without re-fetching data.
+ */
+export function useNowTick(intervalMs = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}

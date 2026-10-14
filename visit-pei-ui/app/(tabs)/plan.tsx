@@ -282,7 +282,7 @@ export default function PlanTab() {
 
   return (
     <>
-      <StatusBar style='light' backgroundColor={COLOR.brandGreen} />
+      <StatusBar style='light' />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -633,10 +633,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   slotImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   slotImageOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   slotCategoryBadge: {
     position: 'absolute',
