@@ -216,32 +216,32 @@ export default function StopDetailsScreen() {
                   </Text>
                 </TouchableOpacity>
               ) : null}
-
-              {stop ? (
-                <TouchableOpacity
-                  activeOpacity={0.84}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/journey/results',
-                      params: {
-                        toRef: `stop:${stop.id}`,
-                        toLat: String(stop.lat ?? ''),
-                        toLon: String(stop.lon ?? ''),
-                        toLabel: stop.name ?? stopId ?? 'This stop',
-                      },
-                    })
-                  }
-                  style={styles.primaryAction}
-                >
-                  <MaterialCommunityIcons
-                    name='map-marker-path'
-                    size={18}
-                    color={COLOR.brandGreen}
-                  />
-                  <Text style={styles.primaryActionText}>Get there</Text>
-                </TouchableOpacity>
-              ) : null}
             </View>
+
+            {stop ? (
+              <TouchableOpacity
+                activeOpacity={0.84}
+                onPress={() =>
+                  router.push({
+                    pathname: '/journey/results',
+                    params: {
+                      toRef: `stop:${stop.id}`,
+                      toLat: String(stop.lat ?? ''),
+                      toLon: String(stop.lon ?? ''),
+                      toLabel: stop.name ?? stopId ?? 'This stop',
+                    },
+                  })
+                }
+                style={styles.getThereAction}
+              >
+                <MaterialCommunityIcons
+                  name='map-marker-path'
+                  size={18}
+                  color={COLOR.whiteText}
+                />
+                <Text style={styles.getThereActionText}>Get there</Text>
+              </TouchableOpacity>
+            ) : null}
 
             {(stopQuery.data?.servedRoutes?.length ?? 0) > 0 ? (
               <View style={styles.servedRoutesRow}>
@@ -407,6 +407,21 @@ const styles = StyleSheet.create({
   primaryActionText: {
     color: COLOR.brandGreen,
     fontSize: 14,
+    fontWeight: '800',
+  },
+  getThereAction: {
+    marginTop: 10,
+    minHeight: 50,
+    borderRadius: 999,
+    backgroundColor: COLOR.brandGreen,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  getThereActionText: {
+    color: COLOR.whiteText,
+    fontSize: 15,
     fontWeight: '800',
   },
   arrivalsTitle: {
