@@ -3,23 +3,25 @@ import { Image } from 'expo-image';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Linking,
   Platform,
+  ScrollView,
   StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import MapView, { Marker } from '../../src/components/map';
 import { COLOR } from '../../styles';
 import { pickLocalized, useLocale } from '../../src/i18n';
 import { usePlacesQuery } from '../../src/services/query/places/usePlacesQuery';
-import { getPlaceTheme } from '../../src/utils/placeVisuals';
+import { excludeRedundantUmbrellaPlaces, getPlaceTheme } from '../../src/utils/placeVisuals';
 import { nativeMapProps } from '../../src/utils/mapView';
+import { CategoryLandingCard } from '../../src/features/discover/category-landing-card';
+import { DiscoverDrawer } from '../../src/features/discover/discover-drawer';
+import { FILTER_TABS, type FilterTab } from '../../src/features/discover/constants';
 import type { Place } from '../../src/types/api';
 
 type ViewMode = 'list' | 'map';
@@ -31,104 +33,17 @@ const PEI_REGION = {
   longitudeDelta: 2.4,
 };
 
-type FilterTab = 'ALL' | 'TRAIL' | 'BEACH' | 'PARK' | 'ATTRACTION';
-
-const FILTER_TABS: { id: FilterTab; label: string }[] = [
-  { id: 'ALL', label: 'All' },
-  { id: 'TRAIL', label: 'Trails' },
-  { id: 'BEACH', label: 'Beaches' },
-  { id: 'PARK', label: 'Parks' },
-  { id: 'ATTRACTION', label: 'Attractions' },
-];
-
-const ALL_LIMIT = 15;
-
-const openDirections = async (
-  name: string,
-  lat: number | null,
-  lng: number | null,
-) => {
-  if (lat == null || lng == null) return;
-  const query = encodeURIComponent(name);
-  const url = Platform.select({
-    ios: `maps://maps.apple.com/?q=${query}&ll=${lat},${lng}`,
-    default: `https://www.google.com/maps/search/?api=1&query=${query}@${lat},${lng}`,
-  });
-  if (url) await Linking.openURL(url);
-};
-
-const PlaceRow = ({
-  index,
-  onDirections,
-  place,
-}: {
-  index: number;
-  onDirections: () => void;
-  place: Place;
-}) => {
-  const theme = getPlaceTheme(place.category);
-  const hasCoords = place.lat != null && place.lng != null;
-
-  return (
-    <Animated.View
-      entering={FadeIn.delay(Math.min(index, 15) * 40).duration(280)}
-    >
-      <View style={styles.row}>
-        <View style={[styles.iconCircle, { backgroundColor: theme.softColor }]}>
-          <Text style={[styles.iconLetter, { color: theme.accentColor }]}>
-            {place.name.trim().charAt(0).toUpperCase()}
-          </Text>
-        </View>
-
-        <View style={styles.rowContent}>
-          <Text style={styles.rowName} numberOfLines={1}>
-            {place.name}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          activeOpacity={hasCoords ? 0.78 : 1}
-          onPress={hasCoords ? onDirections : undefined}
-          style={[styles.dirBtn, !hasCoords && styles.dirBtnDisabled]}
-        >
-          <MaterialCommunityIcons
-            name='navigation-variant'
-            size={12}
-            color={hasCoords ? COLOR.whiteText : COLOR.lightGray}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.divider} />
-    </Animated.View>
-  );
-};
-
-const RowSkeleton = () => (
-  <View>
-    <View style={styles.row}>
-      <View style={[styles.iconCircle, styles.skeletonCircle]} />
-      <View style={styles.rowContent}>
-        <View style={[styles.skeletonLine, { width: '55%' }]} />
-      </View>
-      <View style={[styles.dirBtn, styles.skeletonCircle]} />
-
-    </View>
-    <View style={styles.divider} />
-  </View>
-);
-
 export default function DiscoverTab() {
   const { category } = useLocalSearchParams<{ category?: string }>();
   const { locale } = useLocale();
-  const [activeTab, setActiveTab] = useState<FilterTab>('ALL');
+  const [openDrawerFor, setOpenDrawerFor] = useState<FilterTab | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const mapRef = useRef<MapView | null>(null);
 
   useEffect(() => {
     if (category && FILTER_TABS.some((t) => t.id === category)) {
-      setActiveTab(category as FilterTab);
+      setOpenDrawerFor(category as FilterTab);
     }
   }, [category]);
 
@@ -141,18 +56,39 @@ export default function DiscoverTab() {
     }, [])
   );
 
-  const placesQuery = usePlacesQuery(
-    activeTab !== 'ALL' ? { category: activeTab } : {},
+  // Unfiltered dataset — feeds both the landing cards' counts and the map's
+  // pins, so switching view modes never triggers an extra network round-trip.
+  const allPlacesQuery = usePlacesQuery({});
+
+  const drawerQuery = usePlacesQuery(
+    openDrawerFor ? { category: openDrawerFor } : {},
   );
 
-  const displayPlaces = useMemo(() => {
-    const data = placesQuery.data ?? [];
-    return activeTab === 'ALL' ? data.slice(0, ALL_LIMIT) : data;
-  }, [activeTab, placesQuery.data]);
+  const allPlaces = useMemo(
+    () => excludeRedundantUmbrellaPlaces(allPlacesQuery.data ?? []),
+    [allPlacesQuery.data],
+  );
+
+  const drawerPlaces = useMemo(
+    () => excludeRedundantUmbrellaPlaces(drawerQuery.data ?? []),
+    [drawerQuery.data],
+  );
+
+  const counts = useMemo(() => {
+    if (!allPlacesQuery.data) return undefined;
+    const byCategory: Partial<Record<FilterTab, number>> = {};
+    for (const place of allPlaces) {
+      const key = place.category as FilterTab;
+      if (FILTER_TABS.some((t) => t.id === key)) {
+        byCategory[key] = (byCategory[key] ?? 0) + 1;
+      }
+    }
+    return byCategory;
+  }, [allPlaces, allPlacesQuery.data]);
 
   const mapPlaces = useMemo(
-    () => (placesQuery.data ?? []).filter((p) => p.lat != null && p.lng != null),
-    [placesQuery.data],
+    () => allPlaces.filter((p) => p.lat != null && p.lng != null),
+    [allPlaces],
   );
 
   const selectedPlace = useMemo(
@@ -180,7 +116,10 @@ export default function DiscoverTab() {
 
   useEffect(() => {
     setSelectedPlaceId(null);
-  }, [activeTab, viewMode]);
+  }, [viewMode]);
+
+  const openPlaceDetail = (place: Place) =>
+    router.push({ pathname: '/places/[id]', params: { id: place.id } });
 
   return (
     <>
@@ -213,7 +152,10 @@ export default function DiscoverTab() {
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => setViewMode('map')}
+                onPress={() => {
+                  setViewMode('map');
+                  setOpenDrawerFor(null);
+                }}
                 accessibilityRole='button'
                 accessibilityState={{ selected: viewMode === 'map' }}
                 accessibilityLabel='Map view'
@@ -236,30 +178,6 @@ export default function DiscoverTab() {
             </View>
           </View>
         </View>
-
-        {/* Filter tabs — Image 3 style */}
-        <View style={styles.tabBar}>
-          {FILTER_TABS.map((tab) => {
-            const active = tab.id === activeTab;
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                activeOpacity={0.7}
-                onPress={() => setActiveTab(tab.id)}
-                style={styles.tab}
-              >
-                <Text
-                  style={[styles.tabLabel, active && styles.tabLabelActive]}
-                >
-                  {tab.label}
-                </Text>
-                {active && <View style={styles.tabIndicator} />}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <View style={styles.tabDivider} />
 
         {viewMode === 'map' ? (
           <View style={styles.mapWrap}>
@@ -304,13 +222,13 @@ export default function DiscoverTab() {
               })}
             </MapView>
 
-            {placesQuery.isPending ? (
+            {allPlacesQuery.isPending ? (
               <View style={styles.mapLoading}>
                 <Text style={styles.mapLoadingText}>Loading places…</Text>
               </View>
             ) : null}
 
-            {!placesQuery.isPending && mapPlaces.length === 0 ? (
+            {!allPlacesQuery.isPending && mapPlaces.length === 0 ? (
               <View style={styles.mapLoading}>
                 <MaterialCommunityIcons name='map-marker-off-outline' size={20} color={COLOR.mutedText} />
                 <Text style={styles.mapLoadingText}>No places to plot for this filter</Text>
@@ -322,91 +240,37 @@ export default function DiscoverTab() {
                 place={selectedPlace}
                 locale={locale}
                 onClose={() => setSelectedPlaceId(null)}
-                onOpen={() =>
-                  router.push({ pathname: '/places/[id]', params: { id: selectedPlace.id } })
-                }
+                onOpen={() => openPlaceDetail(selectedPlace)}
               />
             ) : null}
           </View>
         ) : (
-        <>
-        {/* Column headers */}
-        <View style={styles.colHeaders}>
-          <Text style={styles.colHeader}>Name</Text>
-          <Text style={[styles.colHeader, { marginLeft: 'auto' as any, marginRight: 4 }]}>
-            Location
-          </Text>
-        </View>
-
-        {/* List */}
-        {placesQuery.isPending ? (
-          <Animated.FlatList
-            data={[0, 1, 2, 3, 4, 5, 6]}
-            keyExtractor={(i) => String(i)}
-            contentContainerStyle={styles.list}
+          <ScrollView
+            style={styles.cardsScroll}
+            contentContainerStyle={styles.cardsContent}
             showsVerticalScrollIndicator={false}
-            renderItem={() => <RowSkeleton />}
-          />
-        ) : placesQuery.isError ? (
-          <View style={styles.stateCenter}>
-            <MaterialCommunityIcons
-              name='alert-circle-outline'
-              size={40}
-              color={COLOR.mutedText}
-            />
-            <Text style={styles.stateTitle}>Could not load places</Text>
-            <TouchableOpacity
-              onPress={() => placesQuery.refetch()}
-              style={styles.retryBtn}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.retryLabel}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <Animated.FlatList
-            data={displayPlaces}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-            onRefresh={() => placesQuery.refetch()}
-            refreshing={placesQuery.isFetching && !placesQuery.isPending}
-            ListHeaderComponent={
-              displayPlaces.length > 0 ? (
-                <Text style={styles.resultCount}>
-                  {activeTab === 'ALL'
-                    ? `Showing top ${displayPlaces.length} places`
-                    : `${displayPlaces.length} ${FILTER_TABS.find((t) => t.id === activeTab)?.label.toLowerCase() ?? 'places'} found`}
-                </Text>
-              ) : null
-            }
-            renderItem={({ item, index }: { item: Place; index: number }) => (
-              <PlaceRow
-                place={item}
-                index={index}
-                onDirections={() =>
-                  openDirections(item.name, item.lat, item.lng)
-                }
+          >
+            {FILTER_TABS.map((tab) => (
+              <CategoryLandingCard
+                key={tab.id}
+                category={tab.id}
+                count={counts?.[tab.id]}
+                onPress={() => setOpenDrawerFor(tab.id)}
               />
-            )}
-            ListEmptyComponent={
-              <View style={styles.stateCenter}>
-                <MaterialCommunityIcons
-                  name='compass-off-outline'
-                  size={40}
-                  color={COLOR.lightGray}
-                />
-                <Text style={styles.stateTitle}>No places found</Text>
-                <Text style={styles.stateSub}>
-                  Try a different category
-                </Text>
-              </View>
-            }
-          />
-        )}
-        </>
+            ))}
+          </ScrollView>
         )}
       </SafeAreaView>
+
+      <DiscoverDrawer
+        category={openDrawerFor}
+        places={drawerPlaces}
+        isLoading={drawerQuery.isPending}
+        isError={drawerQuery.isError}
+        onRetry={() => drawerQuery.refetch()}
+        onClose={() => setOpenDrawerFor(null)}
+        onSelectPlace={openPlaceDetail}
+      />
     </>
   );
 }
@@ -546,6 +410,15 @@ const styles = StyleSheet.create({
   },
   toggleBtnActive: {
     backgroundColor: COLOR.brandGreen,
+  },
+
+  /* Cards */
+  cardsScroll: {
+    flex: 1,
+  },
+  cardsContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
   },
 
   /* Map */
@@ -690,155 +563,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLOR.surfaceMuted,
-  },
-
-  /* Tab bar */
-  tabBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingBottom: 10,
-    position: 'relative',
-  },
-  tabLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: COLOR.mutedText,
-  },
-  tabLabelActive: {
-    fontWeight: '700',
-    color: COLOR.headingText,
-  },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: '15%',
-    right: '15%',
-    height: 2.5,
-    borderRadius: 999,
-    backgroundColor: COLOR.headingText,
-  },
-  tabDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#e5e7eb',
-    marginBottom: 2,
-  },
-
-  /* Column headers */
-  colHeaders: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  colHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLOR.mutedText,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-
-  /* List */
-  list: {
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-  },
-  resultCount: {
-    fontSize: 12,
-    color: COLOR.mutedText,
-    fontWeight: '500',
-    marginBottom: 4,
-    paddingBottom: 6,
-  },
-
-  /* Row */
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 13,
-    gap: 14,
-  },
-  iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  rowContent: {
-    flex: 1,
-    gap: 4,
-  },
-  rowName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLOR.mainText,
-  },
-  dirBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLOR.brandGreen,
-    flexShrink: 0,
-  },
-  dirBtnDisabled: {
-    backgroundColor: COLOR.backgroundSoft,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#e5e7eb',
-  },
-
-  iconLetter: {
-    fontSize: 17,
-    fontWeight: '800',
-    includeFontPadding: false,
-  },
-
-  /* Skeleton */
-  skeletonCircle: {
-    backgroundColor: COLOR.backgroundSoft,
-  },
-  skeletonLine: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: COLOR.backgroundSoft,
-  },
-
-  /* States */
-  stateCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingBottom: 60,
-  },
-  stateTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLOR.mainText,
-  },
-  stateSub: {
-    fontSize: 13,
-    color: COLOR.mutedText,
-  },
-  retryBtn: {
-    marginTop: 4,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: COLOR.brandGreen,
-  },
-  retryLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLOR.whiteText,
   },
 });

@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
-import type { PlaceCategory } from '../types/api';
+import type { Place, PlaceCategory } from '../types/api';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -137,3 +137,30 @@ export const formatTagLabel = (value: string) =>
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
+
+/**
+ * PEI National Park's five sub-areas are separate records all sharing the
+ * literal name "Prince Edward Island National Park — <Area>" (e.g.
+ * "— Stanhope", "— Brackley") — showing the full prefix on every row in a
+ * list is redundant. Strips anything up to and including an em dash, so
+ * lists just show the distinguishing area name.
+ */
+export const getDisplayPlaceName = (name: string): string => {
+  const afterDash = name.match(/—\s*(.+)$/);
+  return afterDash ? afterDash[1].trim() : name;
+};
+
+/**
+ * The open-data source also includes a generic "umbrella" record for PEI
+ * National Park (e.g. "Prince Edward Island National Park", under TRAIL;
+ * "Prince Edward Island National Park of Canada", under PARK) alongside
+ * several specific per-area records ("… — Stanhope", "… — Brackley", etc).
+ * The umbrella adds no information beyond what those specific areas already
+ * show, so it's dropped wherever place lists are built.
+ */
+const isRedundantUmbrellaPlace = (place: Place): boolean =>
+  /^prince edward island national park/i.test(place.name.trim()) &&
+  !place.name.includes('—');
+
+export const excludeRedundantUmbrellaPlaces = (places: Place[]): Place[] =>
+  places.filter((place) => !isRedundantUmbrellaPlace(place));
